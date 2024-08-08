@@ -3,6 +3,7 @@
 
 #include "Common/JitSymbols.h"
 #include "Interface/Core/CPUID.h"
+#include "Interface/Core/Frontend.h"
 #include "Interface/Core/X86HelperGen.h"
 #include "Interface/Core/ObjectCache/ObjectCacheService.h"
 #include "Interface/Core/Dispatcher/Dispatcher.h"
@@ -317,6 +318,7 @@ namespace FEXCore::Context {
 
     struct GenerateIRResult {
       FEXCore::IR::IRListView* IRList;
+      bool IsRuleTrans;
       FEXCore::IR::RegisterAllocationData::UniquePtr RAData;
       uint64_t TotalInstructions;
       uint64_t TotalInstructionsLength;

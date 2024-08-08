@@ -586,9 +586,12 @@ bool Decoder::NormalOp(FEXCore::X86Tables::X86InstInfo const *Info, uint16_t Op,
     DecodeInst->Src[CurrentSrc].Data.Literal.Value = Literal;
   }
 
+  DecodeInst->InstSize = InstructionSize;
+  DecodeInstToX86Inst(DecodeInst, x86_instr, this->pid);
+
   LOGMAN_THROW_AA_FMT(Bytes == 0, "Inst at 0x{:x}: 0x{:04x} '{}' Had an instruction of size {} with {} remaining",
                      DecodeInst->PC, DecodeInst->OP, DecodeInst->TableInfo->Name ?: "UND", InstructionSize, Bytes);
-  DecodeInst->InstSize = InstructionSize;
+  //DecodeInst->InstSize = InstructionSize;
   return true;
 }
 
@@ -769,6 +772,36 @@ bool Decoder::DecodeInstruction(uint64_t PC) {
   DecodeInst = &DecodedBuffer[DecodedSize];
   memset(DecodeInst, 0, sizeof(DecodedInst));
   DecodeInst->PC = PC;
+
+  /* create an X86 instruction and insert it to tb */
+  auto create_x86_instr = [&](uint64_t pc) -> X86Instruction* {
+      X86Instruction* instr = &instr_buffer[instr_buffer_index];
+      if (instr_buffer_index >= 1000)
+          LogMan::Msg::EFmt("Instruction buffer is not enough!");
+
+      instr->pc = pc;
+      instr->next = nullptr;
+
+      if (instr_block_start == instr_buffer_index) {
+          instr->prev = nullptr;
+      } else {
+          instr->prev = &instr_buffer[instr_buffer_index-1];
+          instr->prev->next = instr;
+      }
+
+      for (int i = 0; i < X86_MAX_OPERAND_NUM; i++)
+          instr->opd[i].type = X86_OPD_TYPE_NONE;
+      instr->opc = X86_OPC_INVALID;
+      for (int i = 0; i < X86_REG_NUM; i++)
+          instr->reg_liveness[i] = true;
+
+      instr_buffer_index++;
+
+      return instr;
+  };
+
+	/* creat an instruction to save disasm results */
+	x86_instr = create_x86_instr(PC);
 
   for(;;) {
     if (InstructionSize >= MAX_INST_SIZE)
@@ -1107,6 +1140,17 @@ void Decoder::DecodeInstructionsAtEntry(uint8_t const* _InstStream, uint64_t PC,
   MaxCondBranchBackwards = ~0ULL;
   DecodedBuffer = PoolObject.ReownOrClaimBuffer();
 
+    auto x86_instr_buffer_init = [&]() {
+    instr_buffer = new X86Instruction[1000];
+    if (instr_buffer == nullptr)
+        LogMan::Msg::EFmt("Cannot allocate memory for instruction buffer!");
+
+    instr_buffer_index = 0;
+    instr_block_start = 0;
+  };
+
+  x86_instr_buffer_init();
+
   // XXX: Load symbol data
   SymbolAvailable = false;
   EntryPoint = PC;
@@ -1149,6 +1193,8 @@ void Decoder::DecodeInstructionsAtEntry(uint8_t const* _InstStream, uint64_t PC,
     uint64_t BlockNumberOfInstructions{};
     uint64_t BlockStartOffset = DecodedSize;
 
+    CurrentBlockDecoding.guest_instr = &instr_buffer[instr_buffer_index];
+    instr_block_start = instr_buffer_index;
     // Do a bit of pointer math to figure out where we are in code
     InstStream = AdjustAddrForSpecialRegion(_InstStream, EntryPoint, RIPToDecode);
 
@@ -1229,7 +1275,8 @@ void Decoder::DecodeInstructionsAtEntry(uint8_t const* _InstStream, uint64_t PC,
     CurrentBlockDecoding.DecodedInstructions = &DecodedBuffer[BlockStartOffset];
     BlockInfo.TotalInstructionCount += BlockNumberOfInstructions;
   }
-
+  delete[] instr_buffer;
+  instr_buffer = nullptr;
   for (auto CodePage : CodePages) {
     AddContainedCodePage(PC, CodePage, FHU::FEX_PAGE_SIZE);
   }

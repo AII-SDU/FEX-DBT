@@ -842,6 +842,7 @@ namespace FEXCore::Context {
     uint64_t TotalInstructions {0};
     uint64_t TotalInstructionsLength {0};
 
+    bool IsRuleTrans{false};
 
     std::shared_lock lk(CustomIRMutex);
 
@@ -866,6 +867,18 @@ namespace FEXCore::Context {
 
       auto BlockInfo = Thread->FrontendDecoder->GetDecodedBlockInfo();
       auto CodeBlocks = &BlockInfo->Blocks;
+
+      if (CodeBlocks->size() <= 1)
+        //IsRuleTrans = false;
+        IsRuleTrans = Thread->CPUBackend->MatchTranslationRule(static_cast<const void*>(&CodeBlocks->at(0)));
+      else
+        LogMan::Msg::EFmt("CodeBlocks Size > 1: {}", CodeBlocks->size());
+
+      if (IsRuleTrans) {
+        // LogMan::Msg::IFmt("Use Translation Block, Skip IR Block.");
+        IsRuleTrans = false;
+        return { nullptr, true, nullptr, 0, 0, 0, 0 };
+      }
 
       Thread->OpDispatcher->BeginFunction(GuestRIP, CodeBlocks, BlockInfo->TotalInstructionCount);
 
@@ -950,7 +963,7 @@ namespace FEXCore::Context {
           if (HadDispatchError && TotalInstructions == 0) {
             // Couldn't handle any instruction in op dispatcher
             Thread->OpDispatcher->ResetWorkingList();
-            return { nullptr, nullptr, 0, 0, 0, 0 };
+            return { nullptr, false, nullptr, 0, 0, 0, 0 };
           }
 
           if (NeedsBlockEnd) {
@@ -1004,6 +1017,7 @@ namespace FEXCore::Context {
 
     return {
       .IRList = IRList,
+      .IsRuleTrans = false,
       .RAData = std::move(RAData),
       .TotalInstructions = TotalInstructions,
       .TotalInstructionsLength = TotalInstructionsLength,
@@ -1014,6 +1028,7 @@ namespace FEXCore::Context {
 
   ContextImpl::CompileCodeResult ContextImpl::CompileCode(FEXCore::Core::InternalThreadState *Thread, uint64_t GuestRIP, uint64_t MaxInst) {
     FEXCore::IR::IRListView *IRList {};
+    bool GeneratedRule {};
     FEXCore::Core::DebugData *DebugData {};
     FEXCore::IR::RegisterAllocationData::UniquePtr RAData {};
     bool GeneratedIR {};
@@ -1063,20 +1078,24 @@ namespace FEXCore::Context {
 
     if (IRList == nullptr) {
       // Generate IR + Meta Info
-      auto [IRCopy, RACopy, TotalInstructions, TotalInstructionsLength, _StartAddr, _Length] = GenerateIR(Thread, GuestRIP, Config.GDBSymbols(), MaxInst);
+      auto [IRCopy, _GeneratedRule, RACopy, TotalInstructions, TotalInstructionsLength, _StartAddr, _Length] = GenerateIR(Thread, GuestRIP, Config.GDBSymbols(), MaxInst);
 
       // Setup pointers to internal structures
       IRList = IRCopy;
+      GeneratedRule = _GeneratedRule;
       RAData = std::move(RACopy);
       DebugData = new FEXCore::Core::DebugData();
       StartAddr = _StartAddr;
       Length = _Length;
 
       // These blocks aren't already in the cache
-      GeneratedIR = true;
+      if (GeneratedRule)
+        GeneratedIR = false;
+      else
+        GeneratedIR = true;
     }
 
-    if (IRList == nullptr) {
+    if (IRList == nullptr && !GeneratedRule) {
       return {};
     }
     // Attempt to get the CPU backend to compile this code

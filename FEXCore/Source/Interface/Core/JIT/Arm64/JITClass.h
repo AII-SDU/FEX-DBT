@@ -11,6 +11,10 @@ $end_info$
 #include "Interface/Core/ArchHelpers/CodeEmitter/Emitter.h"
 #include "Interface/Core/Dispatcher/Dispatcher.h"
 
+#include "Interface/Core/Frontend.h"
+#include "Interface/Core/PatternDbt/arm-instr.h"
+#include "Interface/Core/PatternDbt/rule-translate.h"
+
 #include <aarch64/assembler-aarch64.h>
 #include <aarch64/disasm-aarch64.h>
 
@@ -54,6 +58,7 @@ public:
 
   void ClearRelocations() override { Relocations.clear(); }
 
+  bool MatchTranslationRule(const void *tb) override;
 private:
   FEX_CONFIG_OPT(ParanoidTSO, PARANOIDTSO);
 
@@ -69,7 +74,8 @@ private:
   CPUBackend::CompiledCode CodeData{};
 
   fextl::map<IR::NodeID, ARMEmitter::BiDirectionalLabel> JumpTargets;
-
+  fextl::map<uint64_t, ARMEmitter::BiDirectionalLabel> JumpTargets2;
+  
   [[nodiscard]] FEXCore::ARMEmitter::Register GetReg(IR::NodeID Node) const {
     const auto Reg = GetPhys(Node);
 
@@ -242,6 +248,80 @@ private:
 #define IROP_DISPATCH_DEFS
 #include <FEXCore/IR/IRDefines_Dispatch.inc>
 #undef DEF_OP
+
+ImmMapping imm_map_buf[1000];
+  int imm_map_buf_index;
+
+  LabelMapping label_map_buf[1000];
+  int label_map_buf_index;
+
+  GuestRegisterMapping g_reg_map_buf[1000];
+  int g_reg_map_buf_index;
+  int reg_map_num;
+
+  RuleRecord rule_record_buf[800];
+  int rule_record_buf_index;
+
+  uint64_t pc_matched_buf[800];
+  int pc_matched_buf_index;
+
+  int imm_map_buf_index_pre;
+  int g_reg_map_buf_index_pre;
+  int label_map_buf_index_pre;
+
+  ImmMapping *imm_map;
+  GuestRegisterMapping *g_reg_map;
+  LabelMapping *l_map;
+
+  uint64_t pc_para_matched_buf[800];
+  int pc_para_matched_buf_index;
+
+  ARMRegister RipReg;
+  uint64_t TrueNewRip;
+  uint64_t FalseNewRip;
+
+  inline void reset_buffer(void);
+  inline void save_map_buf_index(void);
+  inline void recover_map_buf_index(void);
+  inline void init_map_ptr(void);
+
+  inline void add_rule_record(TranslationRule *rule, uint64_t pc, uint64_t t_pc,
+                              X86Instruction *last_guest, bool update_cc, bool save_cc, int pa_opc[20]);
+  inline void add_matched_pc(uint64_t pc);
+  inline void add_matched_para_pc(uint64_t pc);
+  bool match_label(char *lab_str, uint64_t t, uint64_t f);
+  bool match_register(X86Register greg, X86Register rreg, uint32_t regsize = 0, bool HighBits = false);
+  bool match_imm(uint64_t val, char *sym);
+  bool match_scale(X86Imm *gscale, X86Imm *rscale);
+  bool match_offset(X86Imm *goffset, X86Imm *roffset);
+  bool match_opd_imm(X86ImmOperand *gopd, X86ImmOperand *ropd);
+  bool match_opd_reg(X86RegOperand *gopd, X86RegOperand *ropd, uint32_t regsize = 0);
+  bool match_opd_mem(X86MemOperand *gopd, X86MemOperand *ropd);
+  bool check_opd_size(X86Operand *ropd, uint32_t gsize, uint32_t rsize);
+  bool match_operand(X86Instruction *ginstr, X86Instruction *rinstr, int opd_idx);
+  bool match_rule_internal(X86Instruction *instr, TranslationRule *rule, FEXCore::Frontend::Decoder::DecodedBlocks const *tb);
+  void get_label_map(char *lab_str, uint64_t *t, uint64_t *f);
+  uint64_t get_imm_map(char *sym);
+  uint64_t GetImmMapWrapper(ARMImm *imm);
+  ARMRegister GetGuestRegMap(ARMRegister& reg, uint32_t& regsize);
+  ARMRegister GetGuestRegMap(ARMRegister& reg, uint32_t& regsize, bool&& HighBits);
+
+  bool instr_is_match(uint64_t pc);
+  bool instrs_is_match(uint64_t pc);
+  bool tb_rule_matched(void);
+  bool check_translation_rule(uint64_t pc);
+  RuleRecord* get_translation_rule(uint64_t pc);
+  void do_rule_translation(RuleRecord *rule_r, uint32_t *reg_liveness);
+
+  void FlipCF();
+  void assemble_arm_instr(ARMInstruction *instr, RuleRecord *rrule);
+  void assemble_arm_exit(uint64_t target_pc);
+
+#define DEF_OPC(x) void Opc_##x(ARMInstruction *instr, RuleRecord *rrule)
+#define ARM_ASM_DEFS
+#include "Interface/Core/PatternDbt/arm-asm.inc"
+#undef DEF_OPC
+
 };
 
 } // namespace FEXCore::CPU

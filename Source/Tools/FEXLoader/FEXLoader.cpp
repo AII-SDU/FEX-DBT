@@ -19,7 +19,8 @@ $end_info$
 #include "LinuxSyscalls/x64/Syscalls.h"
 #include "LinuxSyscalls/SignalDelegator.h"
 #include "Linux/Utils/ELFContainer.h"
-
+#include "../../../FEXCore/Source/Interface/Core/PatternDbt/parse.h"
+//#include "Interface/Core/PatternDbt/parse.h"
 #include <FEXCore/Config/Config.h>
 #include <FEXCore/Core/Context.h>
 #include <FEXCore/Core/CoreState.h>
@@ -471,11 +472,10 @@ int main(int argc, char **argv, char **const envp) {
   auto BRKInfo = Loader.GetBRKInfo();
 
   SyscallHandler->DefaultProgramBreak(BRKInfo.Base, BRKInfo.Size);
-
   CTX->SetSignalDelegator(SignalDelegation.get());
   CTX->SetSyscallHandler(SyscallHandler.get());
   CTX->InitCore(Loader.DefaultRIP(), Loader.GetStackPointer());
-
+  
   // Pass in our VDSO thunks
   CTX->AppendThunkDefinitions(FEX::VDSO::GetVDSOThunkDefinitions());
   SignalDelegation->SetVDSOSigReturn();
@@ -524,6 +524,7 @@ int main(int argc, char **argv, char **const envp) {
     });
   }
 
+  ParseTranslationRules(0);
   if (AOTIRGenerate()) {
     for(auto &Section: Loader.Sections) {
       FEX::AOT::AOTGenSection(CTX.get(), Section);

@@ -17,7 +17,7 @@
 #include <sys/mman.h>
 #include <sys/time.h>
 #include <unistd.h>
-
+#include <sys/syscall.h>
 namespace FEX::VDSO {
   FEXCore::Context::VDSOSigReturn VDSOPointers{};
   namespace VDSOHandlers {
@@ -246,6 +246,10 @@ namespace FEX::VDSO {
         }
       }
 
+      static int get_cpu(unsigned *cpu, unsigned *node){
+          return syscall(SYS_getcpu, cpu, node, NULL);
+      }
+
       static void getcpu(void* ArgsRV) {
         struct ArgsRV_t {
           HLE::x32::compat_ptr<uint32_t> cpu;
@@ -253,7 +257,7 @@ namespace FEX::VDSO {
           int rv;
         } *args = reinterpret_cast<ArgsRV_t*>(ArgsRV);
 
-        int Result = ::getcpu(args->cpu, args->node);
+        int Result = get_cpu(args->cpu, args->node);
         args->rv = SyscallRet(Result);
       }
     }

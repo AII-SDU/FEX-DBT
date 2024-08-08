@@ -2,6 +2,7 @@
 #pragma once
 
 #include "Interface/Core/X86Tables/X86Tables.h"
+#include "Interface/Core/PatternDbt/x86-instr.h"
 
 #include <FEXCore/HLE/SyscallHandler.h>
 #include <FEXCore/Utils/Telemetry.h>
@@ -24,6 +25,7 @@ public:
     uint64_t Entry{};
     uint64_t NumInstructions{};
     FEXCore::X86Tables::DecodedInst *DecodedInstructions;
+    X86Instruction *guest_instr;
     bool HasInvalidInstruction{};
   };
 
@@ -86,7 +88,12 @@ private:
   uint8_t InstructionSize;
   std::array<uint8_t, MAX_INST_SIZE> Instruction;
   FEXCore::X86Tables::DecodedInst *DecodeInst;
-
+  X86Instruction *instr_buffer;
+  X86Instruction *x86_instr;
+  int instr_buffer_index;
+  int instr_block_start;
+  uint64_t pid;
+  
   // This is for multiblock data tracking
   bool SymbolAvailable {false};
   uint64_t EntryPoint {};
