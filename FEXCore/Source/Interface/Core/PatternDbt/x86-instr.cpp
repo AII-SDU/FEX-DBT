@@ -1,3 +1,12 @@
+/**
+ * @file x86-instr.cpp
+ * @brief 实现x86指令的解码、处理和转换功能
+ * 
+ * 本文件包含了x86指令集的操作码、寄存器和操作数的定义,
+ * 以及将FEXCore解码的指令转换为自定义X86Instruction格式的函数。
+ * 主要用于动态二进制翻译过程中的x86指令处理。
+ */
+
 #include <FEXCore/Core/X86Enums.h>
 #include <FEXCore/Utils/LogManager.h>
 
@@ -7,9 +16,15 @@
 
 #include "x86-instr.h"
 
-
+// 定义最大指令数量
 #define MAX_INSTR_NUM 1000000
 
+/**
+ * @brief x86操作码的字符串表示
+ * 
+ * 这个数组将x86操作码枚举值映射到其对应的字符串表示。
+ * 用于调试输出和指令打印。
+ */
 static const char *x86_opc_str[] = {
     [X86_OPC_INVALID] = "**** unsupported (x86) ****",
     [X86_OPC_NOP] = "nop",
@@ -63,7 +78,7 @@ static const char *x86_opc_str[] = {
     [X86_OPC_CALL] = "call",
     [X86_OPC_RET] = "ret",
 
-    // Load/Store
+    // 加载/存储指令
     [X86_OPC_MOVUPS] = "movups",
     [X86_OPC_MOVUPD] = "movupd",
     [X86_OPC_MOVSS] = "movss",
@@ -81,7 +96,7 @@ static const char *x86_opc_str[] = {
     [X86_OPC_PMOVMSKB] = "pmovmskb",
     [X86_OPC_PALIGNR] = "palignr",
 
-    // Logical
+    // 逻辑运算指令
     [X86_OPC_ANDPS] = "andps",
     [X86_OPC_ANDPD] = "andpd",
     [X86_OPC_ORPS] = "orps",
@@ -104,13 +119,13 @@ static const char *x86_opc_str[] = {
     [X86_OPC_PUNPCKHDQ] = "punpckhdq",
     [X86_OPC_PUNPCKLQDQ] = "punpcklqdq",
     [X86_OPC_PUNPCKHQDQ] = "punpckhqdq",
-    // Shuffle
+    // 数据重排指令
     [X86_OPC_SHUFPD] = "shufpd",
     [X86_OPC_PSHUFD] = "pshufd",
     [X86_OPC_PSHUFLW] = "pshuflw",
     [X86_OPC_PSHUFHW] = "pshufhw",
 
-    // Comparison
+    // 比较指令
     [X86_OPC_PCMPGTB] = "pcmpgtb",
     [X86_OPC_PCMPGTW] = "pcmpgtw",
     [X86_OPC_PCMPGTD] = "pcmpgtd",
@@ -118,7 +133,7 @@ static const char *x86_opc_str[] = {
     [X86_OPC_PCMPEQW] = "pcmpeqw",
     [X86_OPC_PCMPEQD] = "pcmpeqd",
 
-    // Algorithm
+    // 算术运算指令
     [X86_OPC_ADDPS] = "addps",
     [X86_OPC_ADDPD] = "addpd",
     [X86_OPC_ADDSS] = "addss",
@@ -133,6 +148,11 @@ static const char *x86_opc_str[] = {
     [X86_OPC_SET_LABEL] = "set label",
 };
 
+/**
+ * @brief x86寄存器枚举值表
+ * 
+ * 这个数组定义了x86寄存器的枚举值,包括通用寄存器和XMM寄存器。
+ */
 static const X86Register x86_reg_table[] = {
     X86_REG_RAX, X86_REG_RCX, X86_REG_RDX, X86_REG_RBX,
     X86_REG_RSP, X86_REG_RBP, X86_REG_RSI, X86_REG_RDI,
@@ -145,6 +165,12 @@ static const X86Register x86_reg_table[] = {
     X86_REG_INVALID
 };
 
+/**
+ * @brief x86寄存器的字符串表示
+ * 
+ * 这个数组将x86寄存器枚举值映射到其对应的字符串表示。
+ * 用于调试输出和指令打印。
+ */
 static const char *x86_reg_str[] = {
     "none",
     "rax", "rcx", "rdx", "rbx", "rsp", "rbp", "rsi", "rdi",
@@ -162,7 +188,12 @@ static const char *x86_reg_str[] = {
     "temp0", "temp1", "temp2", "temp3"
 };
 
-// 获取 X86 操作码的字符串表示
+/**
+ * @brief 获取X86操作码的枚举值
+ * 
+ * @param opc_str 操作码的字符串表示
+ * @return X86Opcode 对应的操作码枚举值
+ */
 static X86Opcode get_x86_opcode(char *opc_str)
 {   
     if (!opc_str) {
@@ -178,7 +209,12 @@ static X86Opcode get_x86_opcode(char *opc_str)
     return X86_OPC_INVALID;
 }
 
-// 获取 X86 寄存器枚举值
+/**
+ * @brief 获取X86寄存器的枚举值
+ * 
+ * @param str 寄存器的字符串表示
+ * @return X86Register 对应的寄存器枚举值
+ */
 static X86Register get_x86_register(char *str)
 {   
     if (!str) {
@@ -193,12 +229,25 @@ static X86Register get_x86_register(char *str)
     return X86_REG_INVALID;
 }
 
+/**
+ * @brief 获取X86操作码的字符串表示
+ * 
+ * @param opc 操作码枚举值
+ * @return const char* 对应的操作码字符串
+ */
 const char *get_x86_opc_str(X86Opcode opc)
 {
     return x86_opc_str[opc];
 }
 
-// 打印 X86 指令的详细信息
+/**
+ * @brief 打印X86指令的详细信息
+ * 
+ * 这个函数将X86指令的各个字段（如操作码、操作数等）打印出来，
+ * 主要用于调试和指令分析。
+ * 
+ * @param instr 指向X86Instruction结构的指针
+ */
 void print_x86_instr(X86Instruction *instr)
 {
     LogMan::Msg::IFmt("0x{:x}: opcode: {} destsize:{} srcsize:{}",
@@ -233,7 +282,13 @@ void print_x86_instr(X86Instruction *instr)
     }
 }
 
-// 打印 X86 指令
+/**
+ * @brief 打印X86指令序列
+ * 
+ * 遍历并打印整个X86指令序列的详细信息。
+ * 
+ * @param instr_seq 指向X86Instruction序列的指针
+ */
 void print_x86_instr_seq(X86Instruction *instr_seq)
 {
     X86Instruction *head = instr_seq;
@@ -244,22 +299,37 @@ void print_x86_instr_seq(X86Instruction *instr_seq)
     }
 }
 
-// 设置 X86 指令的操作码
+/**
+ * @brief 设置X86指令的操作码
+ * 
+ * @param instr 指向X86Instruction结构的指针
+ * @param opc 要设置的操作码
+ */
 void set_x86_instr_opc(X86Instruction *instr, X86Opcode opc)
 {
     instr->opc = opc;
 }
 
-/* set the opcode of this insturction */
+/**
+ * @brief 设置X86指令的操作码（使用字符串）
+ * 
+ * @param instr 指向X86Instruction结构的指针
+ * @param opc_str 操作码的字符串表示
+ */
 void set_x86_instr_opc_str(X86Instruction *instr, char *opc_str)
 {
     instr->opc = get_x86_opcode(opc_str);
 }
 
-// 设置 X86 指令的操作数数量
-/* set the number of operands of this instruction */
+/**
+ * @brief 设置X86指令的操作数数量
+ * 
+ * @param instr 指向X86Instruction结构的指针
+ * @param num 操作数的数量
+ */
 void set_x86_instr_opd_num(X86Instruction *instr, uint8_t num)
-{   if (!instr) {
+{   
+    if (!instr) {
         LogMan::Msg::EFmt("[X86] Error: Null instruction pointer in set_x86_instr_opd_num");
         return;
     }
@@ -270,26 +340,50 @@ void set_x86_instr_opd_num(X86Instruction *instr, uint8_t num)
     instr->opd_num = num;
 }
 
-// 设置 X86 指令的操作数大小
+/**
+ * @brief 设置X86指令的操作数大小
+ * 
+ * @param instr 指向X86Instruction结构的指针
+ * @param SrcSize 源操作数大小
+ * @param DestSize 目标操作数大小
+ */
 void set_x86_instr_opd_size(X86Instruction *instr, uint32_t SrcSize, uint32_t DestSize)
 {
     instr->SrcSize = SrcSize;
     instr->DestSize = DestSize;
 }
 
-// 设置 X86 指令的大小
+/**
+ * @brief 设置X86指令的大小
+ * 
+ * @param instr 指向X86Instruction结构的指针
+ * @param size 指令的大小
+ */
 void set_x86_instr_size(X86Instruction *instr, size_t size)
 {
     instr->InstSize = size;
 }
 
-// 设置 X86 指令特定操作数的类型
+/**
+ * @brief 设置X86指令特定操作数的类型
+ * 
+ * @param instr 指向X86Instruction结构的指针
+ * @param opd_index 操作数的索引
+ * @param type 操作数的类型
+ */
 void set_x86_instr_opd_type(X86Instruction *instr, int opd_index, X86OperandType type)
 {
     set_x86_opd_type(&instr->opd[opd_index], type);
 }
 
-// 设置 X86 指令特定操作数为寄存器
+/**
+ * @brief 设置X86指令特定操作数为寄存器
+ * 
+ * @param instr 指向X86Instruction结构的指针
+ * @param opd_index 操作数的索引
+ * @param regno 寄存器编号
+ * @param HighBits 是否使用高位
+ */
 void set_x86_instr_opd_reg(X86Instruction *instr, int opd_index, int regno, bool HighBits)
 {   
     if (!instr || opd_index < 0 || opd_index >= MAX_X86_OPERANDS) {
@@ -303,7 +397,14 @@ void set_x86_instr_opd_reg(X86Instruction *instr, int opd_index, int regno, bool
     opd->content.reg.HighBits = HighBits;
 }
 
-// 设置 X86 指令特定操作数为立即数
+/**
+ * @brief 设置X86指令特定操作数为立即数
+ * 
+ * @param instr 指向X86Instruction结构的指针
+ * @param opd_index 操作数的索引
+ * @param val 立即数的值
+ * @param isRipLiteral 是否为RIP相对寻址
+ */
 void set_x86_instr_opd_imm(X86Instruction *instr, int opd_index, uint64_t val, bool isRipLiteral)
 {
     X86Operand *opd = &instr->opd[opd_index];
@@ -314,7 +415,13 @@ void set_x86_instr_opd_imm(X86Instruction *instr, int opd_index, uint64_t val, b
     opd->content.imm.isRipLiteral = isRipLiteral;
 }
 
-// 设置 X86 指令特定内存操作数的基址寄存器
+/**
+ * @brief 设置X86指令特定内存操作数的基址寄存器
+ * 
+ * @param instr 指向X86Instruction结构的指针
+ * @param opd_index 操作数的索引
+ * @param regno 基址寄存器编号
+ */
 void set_x86_instr_opd_mem_base(X86Instruction *instr, int opd_index, int regno)
 {
     X86MemOperand *mopd = &(instr->opd[opd_index].content.mem);
@@ -322,13 +429,25 @@ void set_x86_instr_opd_mem_base(X86Instruction *instr, int opd_index, int regno)
     mopd->base = x86_reg_table[regno];
 }
 
-// 设置 X86 指令特定内存操作数的偏移量
+/**
+ * @brief 设置X86指令特定内存操作数的偏移量
+ * 
+ * @param instr 指向X86Instruction结构的指针
+ * @param opd_index 操作数的索引
+ * @param offset 偏移量
+ */
 void set_x86_instr_opd_mem_off(X86Instruction *instr, int opd_index, int32_t offset)
 {
     set_x86_opd_mem_off(&(instr->opd[opd_index]), offset);
 }
 
-// 设置 X86 指令特定内存操作数的比例因子
+/**
+ * @brief 设置X86指令特定内存操作数的比例因子
+ * 
+ * @param instr 指向X86Instruction结构的指针
+ * @param opd_index 操作数的索引
+ * @param scale 比例因子
+ */
 void set_x86_instr_opd_mem_scale(X86Instruction *instr, int opd_index, uint8_t scale)
 {
     X86MemOperand *mopd = &(instr->opd[opd_index].content.mem);
@@ -337,7 +456,13 @@ void set_x86_instr_opd_mem_scale(X86Instruction *instr, int opd_index, uint8_t s
     mopd->scale.content.val = scale;
 }
 
-// 设置 X86 指令特定内存操作数的索引寄存器
+/**
+ * @brief 设置X86指令特定内存操作数的索引寄存器
+ * 
+ * @param instr 指向X86Instruction结构的指针
+ * @param opd_index 操作数的索引
+ * @param regno 索引寄存器编号
+ */
 void set_x86_instr_opd_mem_index(X86Instruction *instr, int opd_index, int regno)
 {
     X86MemOperand *mopd = &(instr->opd[opd_index].content.mem);
@@ -345,8 +470,12 @@ void set_x86_instr_opd_mem_index(X86Instruction *instr, int opd_index, int regno
     mopd->index = x86_reg_table[regno];
 }
 
-// 设置 X86 操作数的类型
-/* set the type of this operand */
+/**
+ * @brief 设置X86操作数的类型
+ * 
+ * @param opd 指向X86Operand结构的指针
+ * @param type 操作数类型
+ */
 void set_x86_opd_type(X86Operand *opd, X86OperandType type)
 {
     switch(type) {
@@ -369,21 +498,33 @@ void set_x86_opd_type(X86Operand *opd, X86OperandType type)
     opd->type = type;
 }
 
-// 设置 X86 立即数操作数的值（使用字符串）
-/* set immediate operand using given string */
+/**
+ * @brief 设置X86立即数操作数的值（使用字符串）
+ * 
+ * @param opd 指向X86Operand结构的指针
+ * @param imm_str 立即数的字符串表示
+ * @param isRipLiteral 是否为RIP相对寻址
+ * @param neg 是否为负数
+ */
 void set_x86_opd_imm_val_str(X86Operand *opd, char *imm_str, bool isRipLiteral, bool neg)
 {
     X86ImmOperand *iopd = &opd->content.imm;
 
     iopd->type = X86_IMM_TYPE_VAL;
-    if (neg) /* negative value */
+    if (neg) /* 负值 */
       iopd->content.val = 0 - strtol(imm_str, NULL, 16);
     else
       iopd->content.val = strtol(imm_str, NULL, 16);
     iopd->isRipLiteral = isRipLiteral;
 }
 
-// 设置 X86 立即数操作数的符号（使用字符串）
+/**
+ * @brief 设置X86立即数操作数的符号（使用字符串）
+ * 
+ * @param opd 指向X86Operand结构的指针
+ * @param imm_str 立即数的字符串表示
+ * @param isRipLiteral 是否为RIP相对寻址
+ */
 void set_x86_opd_imm_sym_str(X86Operand *opd, char *imm_str, bool isRipLiteral)
 {
     X86ImmOperand *iopd = &opd->content.imm;
@@ -393,21 +534,33 @@ void set_x86_opd_imm_sym_str(X86Operand *opd, char *imm_str, bool isRipLiteral)
     iopd->isRipLiteral = isRipLiteral;
 }
 
-// 在字符串开头插入字符
+/**
+ * @brief 在字符串开头插入字符
+ * 
+ * @param reg_str 原字符串
+ * @param new_char 要插入的字符
+ */
 void insert_char_begin(char *reg_str, char new_char) {
     size_t length = strlen(reg_str);
     memmove(reg_str + 1, reg_str, length + 1);
     reg_str[0] = new_char;
 }
 
-// 处理寄存器字符串，获取正确的寄存器名称和大小
+/**
+ * @brief 处理寄存器字符串，获取正确的寄存器名称和大小
+ * 
+ * @param opd 指向X86Operand结构的指针
+ * @param reg_str 寄存器的字符串表示
+ * @param OpSize 操作数大小
+ */
 void proc_reg_str(X86Operand *opd, char *reg_str, uint32_t *OpSize)
 {
     int length = strlen(reg_str);
     opd->content.reg.HighBits = false;
 
+    // 处理不同类型的寄存器名称，设置相应的操作数大小和寄存器标识
     if (!strcmp(reg_str, "ah") || !strcmp(reg_str, "bh")|| !strcmp(reg_str, "ch") || !strcmp(reg_str, "dh")) {
-        // byte
+        // 字节操作数 (8位)
         *OpSize = 1;
         opd->content.reg.HighBits = true;
         insert_char_begin(reg_str, 'r');
@@ -415,7 +568,7 @@ void proc_reg_str(X86Operand *opd, char *reg_str, uint32_t *OpSize)
     } else if (!strcmp(reg_str, "al") || !strcmp(reg_str, "bl") || !strcmp(reg_str, "cl")
         || !strcmp(reg_str, "dl") || !strcmp(reg_str, "sil") || !strcmp(reg_str, "dil")
         || !strcmp(reg_str, "bpl") || !strcmp(reg_str, "spl") || reg_str[length-1] == 'b') {
-        // byte
+        // 字节操作数 (8位)
         *OpSize = 1;
         if (reg_str[length-1] == 'b') {
           reg_str[length-1] = '\0';
@@ -429,7 +582,7 @@ void proc_reg_str(X86Operand *opd, char *reg_str, uint32_t *OpSize)
     } else if (!strcmp(reg_str, "ax") || !strcmp(reg_str, "bx") || !strcmp(reg_str, "cx")
         || !strcmp(reg_str, "dx") || !strcmp(reg_str, "sp") || !strcmp(reg_str, "bp")
         || !strcmp(reg_str, "si") || !strcmp(reg_str, "di") || reg_str[length-1] == 'w') {
-        // word
+        // 字操作数 (16位)
         *OpSize = 2;
         if (reg_str[length-1] == 'w')
           reg_str[length-1] = '\0';
@@ -438,7 +591,7 @@ void proc_reg_str(X86Operand *opd, char *reg_str, uint32_t *OpSize)
     } else if (!strcmp(reg_str, "eax") || !strcmp(reg_str, "ebx") || !strcmp(reg_str, "ecx")
         || !strcmp(reg_str, "edx") || !strcmp(reg_str, "esp") || !strcmp(reg_str, "ebp")
         || !strcmp(reg_str, "esi") || !strcmp(reg_str, "edi") || reg_str[length-1] == 'd') {
-        // dword
+        // 双字操作数 (32位)
         *OpSize = 3;
         reg_str[0] = 'r';
         if (reg_str[length-1] == 'd')
@@ -446,27 +599,47 @@ void proc_reg_str(X86Operand *opd, char *reg_str, uint32_t *OpSize)
     }
 }
 
-// 设置 X86 寄存器操作数（使用字符串）
-/* set register operand using given string */
+/**
+ * @brief 设置X86寄存器操作数（使用字符串）
+ * 
+ * @param opd 指向X86Operand结构的指针
+ * @param reg_str 寄存器的字符串表示
+ * @param OpSize 操作数大小的指针
+ */
 void set_x86_opd_reg_str(X86Operand *opd, char *reg_str, uint32_t *OpSize)
 {
     proc_reg_str(opd, reg_str, OpSize);
     opd->content.reg.num = get_x86_register(reg_str);
 }
 
-// 设置 X86 内存操作数的基址寄存器（使用字符串）
+/**
+ * @brief 设置X86内存操作数的基址寄存器（使用字符串）
+ * 
+ * @param opd 指向X86Operand结构的指针
+ * @param reg_str 寄存器的字符串表示
+ */
 void set_x86_opd_mem_base_str(X86Operand *opd, char *reg_str)
 {
     opd->content.mem.base = get_x86_register(reg_str);
 }
 
-// 设置 X86 内存操作数的索引寄存器（使用字符串）
+/**
+ * @brief 设置X86内存操作数的索引寄存器（使用字符串）
+ * 
+ * @param opd 指向X86Operand结构的指针
+ * @param reg_str 寄存器的字符串表示
+ */
 void set_x86_opd_mem_index_str(X86Operand *opd, char *reg_str)
 {
     opd->content.mem.index = get_x86_register(reg_str);
 }
 
-// 设置 X86 内存操作数的比例因子（使用字符串）
+/**
+ * @brief 设置X86内存操作数的比例因子（使用字符串）
+ * 
+ * @param opd 指向X86Operand结构的指针
+ * @param scale_str 比例因子的字符串表示
+ */
 void set_x86_opd_mem_scale_str(X86Operand *opd, char *scale_str)
 {
     if (strstr(scale_str, "imm")) {
@@ -478,35 +651,56 @@ void set_x86_opd_mem_scale_str(X86Operand *opd, char *scale_str)
     }
 }
 
-// 设置 X86 内存操作数的偏移量
+/**
+ * @brief 设置X86内存操作数的偏移量
+ * 
+ * @param opd 指向X86Operand结构的指针
+ * @param val 偏移量值
+ */
 void set_x86_opd_mem_off(X86Operand *opd, int32_t val)
 {
     opd->content.mem.offset.type = X86_IMM_TYPE_VAL;
     opd->content.mem.offset.content.val = val;
 }
 
-// 设置 X86 内存操作数的偏移量（使用字符串）
+/**
+ * @brief 设置X86内存操作数的偏移量（使用字符串）
+ * 
+ * @param opd 指向X86Operand结构的指针
+ * @param off_str 偏移量的字符串表示
+ * @param neg 是否为负偏移
+ */
 void set_x86_opd_mem_off_str(X86Operand *opd, char *off_str, bool neg)
 {
-    if (strstr(off_str, "imm")) { /* offset is a symbol */
+    if (strstr(off_str, "imm")) { // 偏移量是一个符号
         opd->content.mem.offset.type = X86_IMM_TYPE_SYM;
         strcpy(opd->content.mem.offset.content.sym, off_str);
-    } else { /* offset is a constant integer */
+    } else { // 偏移量是一个常量整数
         opd->content.mem.offset.type = X86_IMM_TYPE_VAL;
-        if (neg) /* negative value */
+        if (neg) // 负值
             opd->content.mem.offset.content.val = 0 - strtol(off_str, NULL, 16);
         else
             opd->content.mem.offset.content.val = strtol(off_str, NULL, 16);
     }
 }
 
-// 获取 X86 寄存器的字符串表示
+/**
+ * @brief 获取X86寄存器的字符串表示
+ * 
+ * @param reg 寄存器枚举值
+ * @return const char* 寄存器的字符串表示
+ */
 const char *get_x86_reg_str(X86Register reg)
 {
     return x86_reg_str[reg];
 }
 
-// 测试 X86 指令是否为分支指令
+/**
+ * @brief 测试X86指令是否为分支指令
+ * 
+ * @param instr 指向X86Instruction结构的指针
+ * @return bool 如果是分支指令则返回true，否则返回false
+ */
 bool x86_instr_test_branch(X86Instruction *instr)
 {
     if (instr->opc == X86_OPC_CALL || instr->opc == X86_OPC_RET
@@ -521,7 +715,12 @@ bool x86_instr_test_branch(X86Instruction *instr)
     return false;
 }
 
-// 判断指令是否定义条件码
+/**
+ * @brief 判断指令是否定义条件码
+ * 
+ * @param opc 指令操作码
+ * @return bool 如果指令定义条件码则返回true，否则返回false
+ */
 static inline bool insn_define_cc(X86Opcode opc)
 {
     if ((opc == X86_OPC_AND) || (opc == X86_OPC_OR) ||
@@ -538,7 +737,14 @@ static inline bool insn_define_cc(X86Opcode opc)
     return false;
 }
 
-// 决定寄存器的活跃性
+/**
+ * @brief 决定寄存器的活跃性
+ * 
+ * 这个函数分析指令序列，确定每条指令中各个寄存器的活跃性。
+ * 
+ * @param succ_define_cc 后继指令是否定义条件码
+ * @param insn_seq 指向X86Instruction序列的指针
+ */
 void decide_reg_liveness(int succ_define_cc, X86Instruction *insn_seq)
 {
     bool cur_liveness[X86_REG_NUM];
@@ -547,27 +753,30 @@ void decide_reg_liveness(int succ_define_cc, X86Instruction *insn_seq)
     bool cc_revised;
     int i;
 
+    // 初始化所有寄存器为活跃状态
     for (i = 0; i < X86_REG_NUM; i++)
         cur_liveness[i] = true;
 
+    // 如果后继指令定义条件码，将条件码寄存器设置为非活跃
     if (succ_define_cc == 3) {
         for (i = X86_REG_OF; i < X86_REG_NUM; i++)
             cur_liveness[i] = false;
     }
 
-    /* Find out the tail */
+    // 找到指令序列的尾部
     tail = insn_seq;
     while (tail && tail->next)
         tail = tail->next;
 
-    /* Decide register liveness */
+    // 从尾部开始，向前决定每条指令的寄存器活跃性
     insn = tail;
     while(insn) {
+        // 复制当前的活跃性状态到指令
         for (i = 0; i < X86_REG_NUM; i++)
             insn->reg_liveness[i] = cur_liveness[i];
 
-        /* Check if this instruciton uses any condition code */
-        /* 1. Conditional execution */
+        // 检查这条指令是否使用任何条件码
+        // 1. 条件执行
         switch (insn->opc) {
             case X86_OPC_CMOVNE:
             case X86_OPC_SETE:
@@ -605,11 +814,11 @@ void decide_reg_liveness(int succ_define_cc, X86Instruction *insn_seq)
             default:
                 fprintf(stderr, "Error: unexpected condition code: %d\n", insn->opc);
         }
-        /* 2. Condition code as an operand */
+        // 2. 条件码作为操作数
         if (insn->opc == X86_OPC_ADC || insn->opc == X86_OPC_SBB || insn->opc == X86_OPC_BT)
             cur_liveness[X86_REG_CF] = true;
 
-        /* 3. Update the liveness if this instruciton defines condition code */
+        // 3. 如果这条指令定义条件码，更新活跃性
         if (insn_define_cc(insn->opc)) {
             for (i = X86_REG_OF; i < X86_REG_NUM; i++)
                 cur_liveness[i] = false;
@@ -618,15 +827,25 @@ void decide_reg_liveness(int succ_define_cc, X86Instruction *insn_seq)
         insn = insn->prev;
     }
 
-    /* Decide if we need to save condition codes for instructions that define condtion codes */
+    // 决定是否需要为定义条件码的指令保存条件码
 }
 
-// 将 FEXCore 解码的指令转换为自定义 X86Instruction 格式
+/**
+ * @brief 将FEXCore解码的指令转换为自定义X86Instruction格式
+ * 
+ * 这个函数是整个文件的核心，负责将FEXCore解码的指令转换为我们自定义的X86Instruction格式。
+ * 它处理各种不同类型的指令，设置操作码、操作数等信息。
+ * 
+ * @param DecodeInst 指向FEXCore解码的指令的指针
+ * @param instr 指向要填充的X86Instruction结构的指针
+ * @param pid 进程ID，用于调试日志
+ */
 void DecodeInstToX86Inst(FEXCore::X86Tables::DecodedInst *DecodeInst, X86Instruction *instr, uint64_t pid)
 {
     uint32_t SrcSize = FEXCore::X86Tables::DecodeFlags::GetSizeSrcFlags(DecodeInst->Flags);
     uint32_t DestSize = FEXCore::X86Tables::DecodeFlags::GetSizeDstFlags(DecodeInst->Flags);
 
+    // 打印调试信息
     #ifdef DEBUG_RULE_LOG
       std::string logContent = "[INFO] Inst at 0x" + intToHex(DecodeInst->PC) +
                              ": 0x" + std::to_string(DecodeInst->OP) +
@@ -639,22 +858,28 @@ void DecodeInstToX86Inst(FEXCore::X86Tables::DecodedInst *DecodeInst, X86Instruc
               DecodeInst->PC, DecodeInst->OP, DecodeInst->TableInfo->Name ?: "UND", DestSize, SrcSize, DecodeInst->InstSize);
     #endif
 
+    // 忽略带有段前缀或LOCK前缀的指令
     if (DecodeInst->Flags & (FEXCore::X86Tables::DecodeFlags::FLAG_SEGMENTS | FEXCore::X86Tables::DecodeFlags::FLAG_LOCK))
       return;
 
     bool SingleSrc = false, ThreeSrc = false, MutiplyOnce = false;
 
+    // 处理NOP指令
     if (!strcmp(DecodeInst->TableInfo->Name, "NOP"))
       set_x86_instr_opc(instr, X86_OPC_NOP);
 
-    // A normal instruction is the most likely.
+    // 处理普通指令
     if (DecodeInst->TableInfo->Type == FEXCore::X86Tables::TYPE_INST) [[likely]] {
+        // 这里是一个大型的if-else结构，用于识别和设置不同类型的指令
+        // 每个if语句检查指令的名称和操作码，然后设置相应的X86_OPC_*
+        
+        // 示例：处理MOV指令
         if (!strcmp(DecodeInst->TableInfo->Name, "MOV")
           && (((DecodeInst->OP >= 0x88 && DecodeInst->OP <= 0x8B) || DecodeInst->OP == 0x8E)
           || (DecodeInst->OP >= 0xA0 && DecodeInst->OP <= 0xA3)
           || (DecodeInst->OP >= 0xB0 && DecodeInst->OP <= 0xBF))) {
             set_x86_instr_opc(instr, X86_OPC_MOV);
-        }
+        }// ... 大量类似的if-else结构，用于处理其他指令类型 ...
         else if (!strcmp(DecodeInst->TableInfo->Name, "MOVZX")
           && (DecodeInst->OP == 0xB6 || DecodeInst->OP == 0xB7)) {
             set_x86_instr_opc(instr, X86_OPC_MOVZX);
@@ -823,16 +1048,15 @@ void DecodeInstToX86Inst(FEXCore::X86Tables::DecodedInst *DecodeInst, X86Instruc
             set_x86_instr_opc(instr, X86_OPC_RET);
         }
 
-
-        // TYPE_GROUP_1~11
-#define OPD(group, prefix, Reg) (((group - FEXCore::X86Tables::TYPE_GROUP_1) << 6) | (prefix) << 3 | (Reg))
-
+        // 处理GROUP指令
+        #define OPD(group, prefix, Reg) (((group - FEXCore::X86Tables::TYPE_GROUP_1) << 6) | (prefix) << 3 | (Reg))
+        
+        // 示例：处理GROUP中的MOV指令
         if (!strcmp(DecodeInst->TableInfo->Name, "MOV")
           && (DecodeInst->OP == OPD(FEXCore::X86Tables::TYPE_GROUP_11, FEXCore::X86Tables::OpToIndex(0xC6), 0)
           || DecodeInst->OP == OPD(FEXCore::X86Tables::TYPE_GROUP_11, FEXCore::X86Tables::OpToIndex(0xC7), 0))) {
             set_x86_instr_opc(instr, X86_OPC_MOV);
-        }
-        else if (!strcmp(DecodeInst->TableInfo->Name, "NOT")
+        }else if (!strcmp(DecodeInst->TableInfo->Name, "NOT")
           && (DecodeInst->OP == OPD(FEXCore::X86Tables::TYPE_GROUP_3, FEXCore::X86Tables::OpToIndex(0xF7), 2))) {
             set_x86_instr_opc(instr, X86_OPC_NOT);
             SingleSrc = true;
@@ -973,10 +1197,9 @@ void DecodeInstToX86Inst(FEXCore::X86Tables::DecodedInst *DecodeInst, X86Instruc
           && (DecodeInst->OP == OPD(FEXCore::X86Tables::TYPE_GROUP_3, FEXCore::X86Tables::OpToIndex(0xF7), 4))) {
             set_x86_instr_opc(instr, X86_OPC_MULL);
         }
-#undef OPD
+        #undef OPD
 
-
-        // SSE
+        // 处理SSE指令
         if (!strcmp(DecodeInst->TableInfo->Name, "MOVUPS")
           && ((DecodeInst->OP == 0x10) || (DecodeInst->OP == 0x11))) {
             set_x86_instr_opc(instr, X86_OPC_MOVUPS);
@@ -1159,19 +1382,18 @@ void DecodeInstToX86Inst(FEXCore::X86Tables::DecodedInst *DecodeInst, X86Instruc
         else if (!strcmp(DecodeInst->TableInfo->Name, "PADDD") && ((DecodeInst->OP == 0xFE))) {
             set_x86_instr_opc(instr, X86_OPC_PADDD);
         }
-
-#define OPD(REX, prefix, opcode) ((REX << 9) | (prefix << 8) | opcode)
-constexpr uint16_t PF_3A_NONE = 0;
-constexpr uint16_t PF_3A_66   = 1;
-        if (!strcmp(DecodeInst->TableInfo->Name, "PALIGNR") && (DecodeInst->OP == OPD(0, PF_3A_NONE, 0x0F)
-          || DecodeInst->OP == OPD(0, PF_3A_66,   0x0F) || DecodeInst->OP == OPD(1, PF_3A_66, 0x0F))) {
-            set_x86_instr_opc(instr, X86_OPC_PALIGNR);
-            ThreeSrc = true;
-        }
-#undef OPD
-
-        // VEX
-#define OPD(map_select, pp, opcode) (((map_select - 1) << 10) | (pp << 8) | (opcode))
+        #define OPD(REX, prefix, opcode) ((REX << 9) | (prefix << 8) | opcode)
+        constexpr uint16_t PF_3A_NONE = 0;
+        constexpr uint16_t PF_3A_66   = 1;
+                if (!strcmp(DecodeInst->TableInfo->Name, "PALIGNR") && (DecodeInst->OP == OPD(0, PF_3A_NONE, 0x0F)
+                  || DecodeInst->OP == OPD(0, PF_3A_66,   0x0F) || DecodeInst->OP == OPD(1, PF_3A_66, 0x0F))) {
+                    set_x86_instr_opc(instr, X86_OPC_PALIGNR);
+                    ThreeSrc = true;
+                }
+        #undef OPD
+        // 处理VEX指令
+        #define OPD(map_select, pp, opcode) (((map_select - 1) << 10) | (pp << 8) | (opcode))
+        
         if (!strcmp(DecodeInst->TableInfo->Name, "SHLX") && (DecodeInst->OP == OPD(2, 0b01, 0xF7))) {
             set_x86_instr_opc(instr, X86_OPC_SHLD);
         }
@@ -1402,27 +1624,35 @@ constexpr uint16_t PF_3A_66   = 1;
           && ((DecodeInst->OP == OPD(1, 0b01, 0xFE)))) {
             set_x86_instr_opc(instr, X86_OPC_PADDD);
         }
-#undef OPD
+
+        #undef OPD
     }
 
+    // 如果指令无效，直接返回
     if (instr->opc == X86_OPC_INVALID) return;
 
+    // 设置指令的操作数大小
     set_x86_instr_opd_size(instr, SrcSize, DestSize);
 
     uint8_t num = 0, count = 0;
     FEXCore::X86Tables::DecodedOperand *Opd = &DecodeInst->Dest;
 
+    // 处理指令的操作数
     while (Opd) {
         if (!Opd->IsNone()) {
           if (SingleSrc && num == 1)
             break;
 
+          // 打印操作数信息
           #ifdef DEBUG_RULE_LOG
             writeToLogFile(std::to_string(pid) + "fex-debug.log", "[INFO] ====Operand Num: " + std::to_string(num+1) + "\n");
           #else
             LogMan::Msg::IFmt("====Operand Num: {:x}", num+1);
           #endif
+
+          // 根据操作数类型进行处理
           if (Opd->IsGPR()){
+              // 处理通用寄存器操作数
               uint8_t GPR = Opd->Data.GPR.GPR;
               bool HighBits = Opd->Data.GPR.HighBits;
 
@@ -1438,6 +1668,7 @@ constexpr uint16_t PF_3A_66   = 1;
                 set_x86_instr_opd_reg(instr, num, 0x20, false);
           }
           else if(Opd->IsRIPRelative()){
+              // 处理RIP相对寻址操作数
               uint32_t Literal = Opd->Data.RIPLiteral.Value.u;
 
               #ifdef DEBUG_RULE_LOG
@@ -1446,9 +1677,9 @@ constexpr uint16_t PF_3A_66   = 1;
                 LogMan::Msg::IFmt( "     RIPLiteral: 0x{:x}", Literal);
               #endif
 
-              set_x86_instr_opd_imm(instr, num, Literal, true);
           }
           else if(Opd->IsLiteral()){
+              // 处理立即数操作数
               uint64_t Literal = Opd->Data.Literal.Value;
 
               #ifdef DEBUG_RULE_LOG
@@ -1456,10 +1687,9 @@ constexpr uint16_t PF_3A_66   = 1;
               #else
                 LogMan::Msg::IFmt( "     Literal: 0x{:x}", Literal);
               #endif
-
-              set_x86_instr_opd_imm(instr, num, Literal);
           }
           else if(Opd->IsGPRDirect()) {
+              // 处理直接寄存器寻址操作数
               uint8_t GPR = Opd->Data.GPR.GPR;
 
               #ifdef DEBUG_RULE_LOG
@@ -1475,6 +1705,7 @@ constexpr uint16_t PF_3A_66   = 1;
                 set_x86_instr_opd_mem_base(instr, num, 0x20);
           }
           else if(Opd->IsGPRIndirect()){
+              // 处理间接寄存器寻址操作数
               uint8_t GPR = Opd->Data.GPRIndirect.GPR;
               int32_t Displacement = Opd->Data.GPRIndirect.Displacement;
 
@@ -1493,6 +1724,7 @@ constexpr uint16_t PF_3A_66   = 1;
               set_x86_instr_opd_mem_off(instr, num, Displacement);
           }
           else if(Opd->IsSIB()){
+              // 处理SIB（比例-索引-基址）寻址操作数
               uint8_t Base = Opd->Data.SIB.Base;
               int32_t Offset = Opd->Data.SIB.Offset;
               uint8_t Index = Opd->Data.SIB.Index;
@@ -1531,7 +1763,8 @@ constexpr uint16_t PF_3A_66   = 1;
       }
     }
 
-    // cmp, add, or, mov, test, sub
+    // 处理特殊情况
+    // 对于某些指令，需要调整操作数的顺序或数量
     if (num == 3 && !ThreeSrc) {
       instr->opd[1] = instr->opd[2];
       num--;
@@ -1546,9 +1779,11 @@ constexpr uint16_t PF_3A_66   = 1;
       set_x86_instr_opd_imm(instr, 1, 1);
     }
 
+    // 设置操作数数量和指令大小
     set_x86_instr_opd_num(instr, num);
     set_x86_instr_size(instr, DecodeInst->InstSize);
 
+    // 输出调试信息
     #ifdef DEBUG_RULE_LOG
       output_x86_instr(instr, pid);
     #endif

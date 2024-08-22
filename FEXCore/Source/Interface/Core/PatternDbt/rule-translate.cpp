@@ -1,3 +1,11 @@
+/**
+ * @file rule-translate.cpp
+ * @brief 实现规则匹配和翻译的功能
+ *
+ * 本文件包含了用于匹配指令序列与预定义规则，以及执行相应翻译的函数。
+ * 主要功能包括初始化缓冲区、匹配操作数、检查翻译规则、执行规则翻译等。
+ */
+
 #include "Interface/Core/JIT/Arm64/JITClass.h"
 
 #include <FEXCore/Debug/InternalThreadState.h>
@@ -9,6 +17,7 @@
 
 #include "rule-translate.h"
 
+// 定义各种缓冲区的最大长度
 #define MAX_RULE_RECORD_BUF_LEN 800
 #define MAX_GUEST_INSTR_LEN 800
 #define MAX_HOST_RULE_LEN 800
@@ -16,11 +25,16 @@
 #define MAX_MAP_BUF_LEN 1000
 #define MAX_HOST_RULE_INSTR_LEN 1000
 
+// 调试标志
 static int debug = 0;
+// 匹配指令计数器
 static int match_insts = 0;
+// 匹配计数器
 static int match_counter = 10;
 
-// 重置各种缓冲区和索引
+/**
+ * @brief 重置各种缓冲区和索引
+ */
 inline void FEXCore::CPU::Arm64JITCore::reset_buffer(void)
 {
     imm_map_buf_index = 0;
@@ -33,7 +47,9 @@ inline void FEXCore::CPU::Arm64JITCore::reset_buffer(void)
     pc_para_matched_buf_index = 0;
 }
 
-// 保存当前的映射缓冲区索引
+/**
+ * @brief 保存当前的映射缓冲区索引
+ */
 inline void FEXCore::CPU::Arm64JITCore::save_map_buf_index(void)
 {
     imm_map_buf_index_pre = imm_map_buf_index;
@@ -41,7 +57,9 @@ inline void FEXCore::CPU::Arm64JITCore::save_map_buf_index(void)
     label_map_buf_index_pre = label_map_buf_index;
 }
 
-// 恢复之前保存的映射缓冲区索引
+/**
+ * @brief 恢复之前保存的映射缓冲区索引
+ */
 inline void FEXCore::CPU::Arm64JITCore::recover_map_buf_index(void)
 {
     imm_map_buf_index = imm_map_buf_index_pre;
@@ -49,7 +67,9 @@ inline void FEXCore::CPU::Arm64JITCore::recover_map_buf_index(void)
     label_map_buf_index = label_map_buf_index_pre;
 }
 
-// 初始化映射指针
+/**
+ * @brief 初始化映射指针
+ */
 inline void FEXCore::CPU::Arm64JITCore::init_map_ptr(void)
 {
     imm_map = NULL;
@@ -58,7 +78,17 @@ inline void FEXCore::CPU::Arm64JITCore::init_map_ptr(void)
     reg_map_num = 0;
 }
 
-// 添加规则记录
+/**
+ * @brief 添加规则记录
+ * 
+ * @param rule 翻译规则
+ * @param pc 程序计数器
+ * @param t_pc 目标程序计数器
+ * @param last_guest 最后一条客户端指令
+ * @param update_cc 是否更新条件码
+ * @param save_cc 是否保存条件码
+ * @param pa_opc 参数化操作码数组
+ */
 inline void FEXCore::CPU::Arm64JITCore::add_rule_record(TranslationRule *rule, uint64_t pc, uint64_t t_pc,
                                    X86Instruction *last_guest, bool update_cc, bool save_cc, int pa_opc[MAX_PARA_OPC])
 {
@@ -83,29 +113,42 @@ inline void FEXCore::CPU::Arm64JITCore::add_rule_record(TranslationRule *rule, u
         p->para_opc[i] = pa_opc[i];
 }
 
-// 添加匹配的PC
+/**
+ * @brief 添加匹配的PC
+ * 
+ * @param pc 程序计数器
+ */
 inline void FEXCore::CPU::Arm64JITCore::add_matched_pc(uint64_t pc)
-{   if (pc_matched_buf_index >= MAX_GUEST_INSTR_LEN) {
+{   
+    if (pc_matched_buf_index >= MAX_GUEST_INSTR_LEN) {
         LogMan::Msg::EFmt("Matched PC buffer overflow");
         return;
     }
     pc_matched_buf[pc_matched_buf_index++] = pc;
-
-    //assert(pc_matched_buf_index < MAX_GUEST_INSTR_LEN);
 }
 
-// 添加参数化匹配的PC  
+/**
+ * @brief 添加参数化匹配的PC
+ * 
+ * @param pc 程序计数器
+ */
 inline void FEXCore::CPU::Arm64JITCore::add_matched_para_pc(uint64_t pc)
-{   if (pc_para_matched_buf_index >= MAX_GUEST_INSTR_LEN) {
+{   
+    if (pc_para_matched_buf_index >= MAX_GUEST_INSTR_LEN) {
         LogMan::Msg::EFmt("Matched para PC buffer overflow");
         return;
     }
     pc_para_matched_buf[pc_para_matched_buf_index++] = pc;
-
-    //assert(pc_para_matched_buf_index < MAX_GUEST_INSTR_LEN);
 }
 
-// 匹配标签
+/**
+ * @brief 匹配标签
+ * 
+ * @param lab_str 标签字符串
+ * @param t 目标地址
+ * @param f fallthrough地址
+ * @return bool 是否匹配成功
+ */
 bool FEXCore::CPU::Arm64JITCore::match_label(char *lab_str, uint64_t t, uint64_t f)
 {
     LabelMapping *lmap = l_map;
@@ -119,13 +162,12 @@ bool FEXCore::CPU::Arm64JITCore::match_label(char *lab_str, uint64_t t, uint64_t
         return (lmap->target == t && lmap->fallthrough == f);
     }
 
-    /* append this map to label map buffer */
+    // 将此映射添加到标签映射缓冲区
     if (label_map_buf_index >= MAX_MAP_BUF_LEN) {
         LogMan::Msg::EFmt("Label map buffer overflow");
         return false;
     }
     lmap = &label_map_buf[label_map_buf_index++];
-    //assert(label_map_buf_index < MAX_MAP_BUF_LEN);
     strcpy(lmap->lab_str, lab_str);
     lmap->target = t;
     lmap->fallthrough = f;
@@ -136,7 +178,15 @@ bool FEXCore::CPU::Arm64JITCore::match_label(char *lab_str, uint64_t t, uint64_t
     return true;
 }
 
-// 匹配寄存器
+/**
+ * @brief 匹配寄存器
+ * 
+ * @param greg 客户端寄存器
+ * @param rreg 规则寄存器
+ * @param regsize 寄存器大小
+ * @param HighBits 是否为高位
+ * @return bool 是否匹配成功
+ */
 bool FEXCore::CPU::Arm64JITCore::match_register(X86Register greg, X86Register rreg, uint32_t regsize, bool HighBits)
 {
     GuestRegisterMapping *gmap = g_reg_map;
@@ -150,7 +200,7 @@ bool FEXCore::CPU::Arm64JITCore::match_register(X86Register greg, X86Register rr
         return false;
     }
 
-    /* use physical register */
+    // 使用物理寄存器
     if ((X86_REG_RAX <= rreg && rreg <= X86_REG_XMM15) && greg == rreg)
         return true;
 
@@ -160,7 +210,7 @@ bool FEXCore::CPU::Arm64JITCore::match_register(X86Register greg, X86Register rr
         return false;
     }
 
-    /* check if we already have this map */
+    // 检查是否已经有这个映射
     while (gmap) {
         if (gmap->sym != rreg) {
             gmap = gmap->next;
@@ -174,9 +224,8 @@ bool FEXCore::CPU::Arm64JITCore::match_register(X86Register greg, X86Register rr
         LogMan::Msg::EFmt("Register map buffer overflow");
         return false;
     }
-    /* append this map to register map buffer */
+    // 将此映射添加到寄存器映射缓冲区
     gmap = &g_reg_map_buf[g_reg_map_buf_index++];
-    //assert(g_reg_map_buf_index < MAX_MAP_BUF_LEN);
     gmap->sym = rreg;
     gmap->num = greg;
 
@@ -197,7 +246,13 @@ bool FEXCore::CPU::Arm64JITCore::match_register(X86Register greg, X86Register rr
     return true;
 }
 
-// 匹配立即数
+/**
+ * @brief 匹配立即数
+ * 
+ * @param val 立即数值
+ * @param sym 立即数符号
+ * @return bool 是否匹配成功
+ */
 bool FEXCore::CPU::Arm64JITCore::match_imm(uint64_t val, char *sym)
 {
     ImmMapping *imap = imm_map;
@@ -212,13 +267,12 @@ bool FEXCore::CPU::Arm64JITCore::match_imm(uint64_t val, char *sym)
         imap = imap->next;
     }
 
-    /* add this map to immediate map buffer */
+    // 将此映射添加到立即数映射缓冲区
     if (imm_map_buf_index >= MAX_MAP_BUF_LEN) {
         LogMan::Msg::EFmt("Immediate map buffer overflow");
         return false;
     }
     imap = &imm_map_buf[imm_map_buf_index++];
-    //assert(imm_map_buf_index < MAX_MAP_BUF_LEN);
     strcpy(imap->imm_str, sym);
     imap->imm_val = val;
 
@@ -228,7 +282,13 @@ bool FEXCore::CPU::Arm64JITCore::match_imm(uint64_t val, char *sym)
     return true;
 }
 
-// 匹配比例因子
+/**
+ * @brief 匹配比例因子
+ * 
+ * @param gscale 客户端比例因子
+ * @param rscale 规则比例因子
+ * @return bool 是否匹配成功
+ */
 bool FEXCore::CPU::Arm64JITCore::match_scale(X86Imm *gscale, X86Imm *rscale)
 {
     if (gscale->type == X86_IMM_TYPE_NONE &&
@@ -246,7 +306,13 @@ bool FEXCore::CPU::Arm64JITCore::match_scale(X86Imm *gscale, X86Imm *rscale)
         return match_imm(gscale->content.val, rscale->content.sym);
 }
 
-// 匹配偏移量
+/**
+ * @brief 匹配偏移量
+ * 
+ * @param goffset 客户端偏移量
+ * @param roffset 规则偏移量
+ * @return bool 是否匹配成功
+ */
 bool FEXCore::CPU::Arm64JITCore::match_offset(X86Imm *goffset, X86Imm *roffset)
 {
     char *sym;
@@ -278,7 +344,13 @@ bool FEXCore::CPU::Arm64JITCore::match_offset(X86Imm *goffset, X86Imm *roffset)
     return match_imm(off_val, sym);
 }
 
-// 匹配立即数操作数
+/**
+ * @brief 匹配立即数操作数
+ * 
+ * @param gopd 客户端立即数操作数
+ * @param ropd 规则立即数操作数
+ * @return bool 是否匹配成功
+ */
 bool FEXCore::CPU::Arm64JITCore::match_opd_imm(X86ImmOperand *gopd, X86ImmOperand *ropd)
 {
     if (gopd->type == X86_IMM_TYPE_NONE && ropd->type == X86_IMM_TYPE_NONE)
@@ -295,10 +367,17 @@ bool FEXCore::CPU::Arm64JITCore::match_opd_imm(X86ImmOperand *gopd, X86ImmOperan
     }
 }
 
-// 匹配寄存器操作数
+/**
+ * @brief 匹配寄存器操作数
+ * 
+ * @param gopd 客户端寄存器操作数
+ * @param ropd 规则寄存器操作数
+ * @param regsize 寄存器大小
+ * @return bool 是否匹配成功
+ */
 bool FEXCore::CPU::Arm64JITCore::match_opd_reg(X86RegOperand *gopd, X86RegOperand *ropd, uint32_t regsize)
 {
-    /* physical reg, but high bit not match */
+    // 物理寄存器，但高位不匹配
     if ((X86_REG_RAX <= ropd->num && ropd->num <= X86_REG_XMM15) && gopd->HighBits != ropd->HighBits) {
         if (debug)
             LogMan::Msg::IFmt("Unmatch reg: phy reg, but high bit error.");
@@ -307,7 +386,13 @@ bool FEXCore::CPU::Arm64JITCore::match_opd_reg(X86RegOperand *gopd, X86RegOperan
     return match_register(gopd->num, ropd->num, regsize, gopd->HighBits);
 }
 
-// 匹配内存操作数
+/**
+ * @brief 匹配内存操作数
+ * 
+ * @param gopd 客户端内存操作数
+ * @param ropd 规则内存操作数
+ * @return bool 是否匹配成功
+ */
 bool FEXCore::CPU::Arm64JITCore::match_opd_mem(X86MemOperand *gopd, X86MemOperand *ropd)
 {
     return (match_register(gopd->base, ropd->base) &&
@@ -316,7 +401,14 @@ bool FEXCore::CPU::Arm64JITCore::match_opd_mem(X86MemOperand *gopd, X86MemOperan
             match_scale(&gopd->scale, &ropd->scale));
 }
 
-// 检查操作数大小
+/**
+ * @brief 检查操作数大小
+ * 
+ * @param ropd 规则操作数
+ * @param gsize 客户端大小
+ * @param rsize 规则大小
+ * @return bool 是否匹配成功
+ */
 bool FEXCore::CPU::Arm64JITCore::check_opd_size(X86Operand *ropd, uint32_t gsize, uint32_t rsize)
 {
     if ((ropd->type == X86_OPD_TYPE_REG && X86_REG_RAX <= ropd->content.reg.num && ropd->content.reg.num <= X86_REG_XMM15)
@@ -326,8 +418,16 @@ bool FEXCore::CPU::Arm64JITCore::check_opd_size(X86Operand *ropd, uint32_t gsize
     return true;
 }
 
-// 匹配操作数
-/* Try to match operand in guest instruction (gopd) and and the rule (ropd) */
+/**
+ * @brief 匹配操作数
+ * 
+ * 尝试匹配客户端指令(gopd)和规则(ropd)中的操作数
+ * 
+ * @param ginstr 客户端指令
+ * @param rinstr 规则指令
+ * @param opd_idx 操作数索引
+ * @return bool 是否匹配成功
+ */
 bool FEXCore::CPU::Arm64JITCore::match_operand(X86Instruction *ginstr, X86Instruction *rinstr, int opd_idx)
 {
     X86Operand *gopd = &ginstr->opd[opd_idx];
@@ -345,9 +445,7 @@ bool FEXCore::CPU::Arm64JITCore::match_operand(X86Instruction *ginstr, X86Instru
 
     if (!opd_idx && rinstr->DestSize && !check_opd_size(ropd, ginstr->DestSize, rinstr->DestSize)) {
         if (debug) {
-
                 LogMan::Msg::IFmt("Different dest size - RULE: {}, GUEST: {}", rinstr->DestSize, ginstr->DestSize);
-           
         }
         return false;
     }
@@ -362,7 +460,6 @@ bool FEXCore::CPU::Arm64JITCore::match_operand(X86Instruction *ginstr, X86Instru
         if (gopd->content.imm.isRipLiteral != ropd->content.imm.isRipLiteral)
             return false;
         if (x86_instr_test_branch(rinstr) || ropd->content.imm.isRipLiteral) {
-            //assert(ropd->content.imm.type == X86_IMM_TYPE_SYM);
             if (ropd->content.imm.type != X86_IMM_TYPE_SYM) {
                 LogMan::Msg::EFmt("Expected symbolic immediate for branch instruction or RIP-relative literal");
                 return false;
@@ -372,7 +469,7 @@ bool FEXCore::CPU::Arm64JITCore::match_operand(X86Instruction *ginstr, X86Instru
                 return false;
             }
             return match_label(ropd->content.imm.content.sym, gopd->content.imm.content.val, ginstr->pc + ginstr->InstSize);
-        } else /* match imm operand */
+        } else /* 匹配立即数操作数 */
             return match_opd_imm(&gopd->content.imm, &ropd->content.imm);
     } else if (ropd->type == X86_OPD_TYPE_REG) {
         return match_opd_reg(&gopd->content.reg, &ropd->content.reg, regsize);
@@ -384,19 +481,23 @@ bool FEXCore::CPU::Arm64JITCore::match_operand(X86Instruction *ginstr, X86Instru
     return true;
 }
 
-// not used
+// 未使用的函数
 static bool check_instr(X86Instruction *ginstr){
     return true;
 }
 
-// return:
-// 0: not matched
-// 1: matched
-// 2: matched but condition is different
-// 内部规则匹配函数
+/**
+ * @brief 内部规则匹配函数
+ * 
+ * @param instr 客户端指令
+ * @param rule 翻译规则
+ * @param tb 解码后的基本块
+ * @return bool 是否匹配成功
+ */
 bool FEXCore::CPU::Arm64JITCore::match_rule_internal(X86Instruction *instr, TranslationRule *rule,
                     FEXCore::Frontend::Decoder::DecodedBlocks const *tb)
-{   if (!instr || !rule || !tb) {
+{   
+    if (!instr || !rule || !tb) {
         LogMan::Msg::EFmt("Invalid input parameters in match_rule_internal");
         return false;
     }
@@ -406,11 +507,10 @@ bool FEXCore::CPU::Arm64JITCore::match_rule_internal(X86Instruction *instr, Tran
     int i;
 
     int j = 0;
-    /* init for this rule */
+    // 初始化此规则
     init_map_ptr();
 
     while(p_rule_instr) {
-
         if (p_rule_instr->opc == X86_OPC_INVALID || p_guest_instr->opc == X86_OPC_INVALID) {
             return false;
         }
@@ -419,9 +519,9 @@ bool FEXCore::CPU::Arm64JITCore::match_rule_internal(X86Instruction *instr, Tran
             goto next_check;
         }
 
-        /* check opcode and number of operands */
-        if ((p_rule_instr->opc != p_guest_instr->opc) ||  //opcode not equal
-            ((p_rule_instr->opd_num != 0) && (p_rule_instr->opd_num != p_guest_instr->opd_num))) {  //operand not equal
+        // 检查操作码和操作数数量
+        if ((p_rule_instr->opc != p_guest_instr->opc) ||  // 操作码不相等
+            ((p_rule_instr->opd_num != 0) && (p_rule_instr->opd_num != p_guest_instr->opd_num))) {  // 操作数不相等
 
             if (debug) {
                 if (p_rule_instr->opd_num != p_guest_instr->opd_num)
@@ -431,7 +531,7 @@ bool FEXCore::CPU::Arm64JITCore::match_rule_internal(X86Instruction *instr, Tran
             return false;
         }
 
-        /*check parameterized instructions*/
+        // 检查参数化指令
         if ((p_rule_instr->opd_num == 0) && !check_instr(p_guest_instr)) {
             if (debug) {
                 LogMan::Msg::IFmt("parameterization check error!");
@@ -439,7 +539,7 @@ bool FEXCore::CPU::Arm64JITCore::match_rule_internal(X86Instruction *instr, Tran
             return false;
         }
 
-        /* match each operand */
+        // 匹配每个操作数
         for(i = 0; i < p_rule_instr->opd_num; i++) {
             if (!match_operand(p_guest_instr, p_rule_instr, i)) {
                 if (debug) {
@@ -461,7 +561,7 @@ bool FEXCore::CPU::Arm64JITCore::match_rule_internal(X86Instruction *instr, Tran
         next_check:
         last_guest_instr = p_guest_instr;
 
-        /* check next instruction */
+        // 检查下一条指令
         p_rule_instr = p_rule_instr->next;
         p_guest_instr = p_guest_instr->next;
         j++;
@@ -483,8 +583,13 @@ bool FEXCore::CPU::Arm64JITCore::match_rule_internal(X86Instruction *instr, Tran
 
     return true;
 }
-
-// 获取标签映射
+/**
+ * @brief 获取标签映射
+ * 
+ * @param lab_str 标签字符串
+ * @param t 用于存储目标地址的指针
+ * @param f 用于存储fallthrough地址的指针
+ */
 void FEXCore::CPU::Arm64JITCore::get_label_map(char *lab_str, uint64_t *t, uint64_t *f)
 {
     LabelMapping *lmap = l_map;
@@ -500,18 +605,22 @@ void FEXCore::CPU::Arm64JITCore::get_label_map(char *lab_str, uint64_t *t, uint6
     LogMan::Msg::EFmt("Label '{}' not found in get_label_map", lab_str);
     *t = 0;  // 设置一个默认值
     *f = 0;
-    //assert (0);
 }
 
-// 获取立即数映射
+/**
+ * @brief 获取立即数映射
+ * 
+ * @param sym 立即数符号
+ * @return uint64_t 映射后的立即数值
+ */
 uint64_t FEXCore::CPU::Arm64JITCore::get_imm_map(char *sym)
 {
     ImmMapping *im = imm_map;
-    char t_str[50]; /* replaced string */
-    char t_buf[50]; /* buffer string */
+    char t_str[50]; // 替换后的字符串
+    char t_buf[50]; // 缓冲字符串
 
-    /* Due to the expression in host imm_str, We replace all imm_xxx in host imm_str
-       with the corresponding guest values, and parse it to get the value of the expression */
+    // 由于主机imm_str中的表达式，我们用相应的客户端值替换主机imm_str中的所有imm_xxx，
+    // 并解析它以获得表达式的值
     strcpy(t_str, sym);
 
     while(im) {
@@ -531,7 +640,12 @@ uint64_t FEXCore::CPU::Arm64JITCore::get_imm_map(char *sym)
     return std::stoull(t_str);
 }
 
-// 获取立即数映射的包装函数
+/**
+ * @brief 获取立即数映射的包装函数
+ * 
+ * @param imm ARM立即数结构指针
+ * @return uint64_t 映射后的立即数值
+ */
 uint64_t FEXCore::CPU::Arm64JITCore::GetImmMapWrapper(ARMImm *imm)
 {
     if (imm->type == ARM_IMM_TYPE_NONE)
@@ -543,7 +657,12 @@ uint64_t FEXCore::CPU::Arm64JITCore::GetImmMapWrapper(ARMImm *imm)
     return get_imm_map(imm->content.sym);
 }
 
-// 获取客户寄存器映射
+/**
+ * @brief 获取客户寄存器映射
+ * 
+ * @param reg X86寄存器
+ * @return ARMRegister 对应的ARM寄存器
+ */
 static ARMRegister guest_host_reg_map(X86Register& reg)
 {
   switch (reg) {
@@ -585,7 +704,13 @@ static ARMRegister guest_host_reg_map(X86Register& reg)
   }
 }
 
-// 检查指令是否匹配
+/**
+ * @brief 获取客户寄存器映射
+ * 
+ * @param reg ARM寄存器引用
+ * @param regsize 寄存器大小引用
+ * @return ARMRegister 映射后的ARM寄存器
+ */
 ARMRegister FEXCore::CPU::Arm64JITCore::GetGuestRegMap(ARMRegister& reg, uint32_t& regsize)
 {   
     if (reg == ARM_REG_INVALID) {
@@ -595,7 +720,14 @@ ARMRegister FEXCore::CPU::Arm64JITCore::GetGuestRegMap(ARMRegister& reg, uint32_
     return GetGuestRegMap(reg, regsize, false);
 }
 
-// 检查指令序列是否匹配
+/**
+ * @brief 获取客户寄存器映射（带高位标志）
+ * 
+ * @param reg ARM寄存器引用
+ * @param regsize 寄存器大小引用
+ * @param HighBits 高位标志
+ * @return ARMRegister 映射后的ARM寄存器
+ */
 ARMRegister FEXCore::CPU::Arm64JITCore::GetGuestRegMap(ARMRegister& reg, uint32_t& regsize, bool&& HighBits)
 {
     if (reg == ARM_REG_INVALID)
@@ -624,11 +756,15 @@ ARMRegister FEXCore::CPU::Arm64JITCore::GetGuestRegMap(ARMRegister& reg, uint32_
         gmap = gmap->next;
     }
     LogMan::Msg::EFmt("No matching guest register found for ARM register: {}", get_arm_reg_str(reg));
-    //assert(0);
     return ARM_REG_INVALID;
 }
 
-// 检查翻译块规则是否匹配
+/**
+ * @brief 检查指令是否匹配
+ * 
+ * @param pc 程序计数器
+ * @return bool 是否匹配
+ */
 bool FEXCore::CPU::Arm64JITCore::instr_is_match(uint64_t pc)
 {
     int i;
@@ -639,7 +775,12 @@ bool FEXCore::CPU::Arm64JITCore::instr_is_match(uint64_t pc)
     return false;
 }
 
-// 检查是否存在翻译规则
+/**
+ * @brief 检查是否存在匹配的指令序列
+ * 
+ * @param pc 程序计数器
+ * @return bool 是否存在匹配
+ */
 bool FEXCore::CPU::Arm64JITCore::instrs_is_match(uint64_t pc)
 {
     int i;
@@ -650,13 +791,22 @@ bool FEXCore::CPU::Arm64JITCore::instrs_is_match(uint64_t pc)
     return instr_is_match(pc);
 }
 
-// 获取翻译规则
+/**
+ * @brief 获取翻译规则
+ * 
+ * @return bool 是否存在匹配的翻译规则
+ */
 bool FEXCore::CPU::Arm64JITCore::tb_rule_matched(void)
 {
     return (pc_matched_buf_index != 0);
 }
 
-// 匹配翻译规则
+/**
+ * @brief 匹配翻译规则
+ * 
+ * @param pc 程序计数器
+ * @return bool 是否存在匹配的翻译规则
+ */
 bool FEXCore::CPU::Arm64JITCore::check_translation_rule(uint64_t pc)
 {
     int i;
@@ -667,19 +817,23 @@ bool FEXCore::CPU::Arm64JITCore::check_translation_rule(uint64_t pc)
     return false;
 }
 
-// 执行规则翻译
+/**
+ * @brief 获取翻译规则
+ * 
+ * @param pc 程序计数器
+ * @return RuleRecord* 匹配的规则记录指针，如果没有匹配则返回NULL
+ */
 RuleRecord* FEXCore::CPU::Arm64JITCore::get_translation_rule(uint64_t pc)
 {
     int i;
     for (i = 0; i < rule_record_buf_index; i++) {
         if (rule_record_buf[i].pc == pc) {
-            rule_record_buf[i].pc = 0xffffffff; /* disable it after translation */
+            rule_record_buf[i].pc = 0xffffffff; // 翻译后禁用它
             return &rule_record_buf[i];
         }
     }
     return NULL;
 }
-
 
 #ifdef PROFILE_RULE_TRANSLATION
 uint64_t rule_guest_pc = 0;
@@ -687,6 +841,13 @@ uint32_t num_rules_hit = 0;
 uint32_t num_rules_replace = 0;
 #endif
 
+/**
+ * @brief 检查是否需要保存条件码
+ * 
+ * @param pins 指令序列的起始指针
+ * @param icount 指令数量
+ * @return bool 是否需要保存条件码
+ */
 static bool is_save_cc(X86Instruction *pins, int icount)
 {
     X86Instruction *head = pins;
@@ -701,10 +862,15 @@ static bool is_save_cc(X86Instruction *pins, int icount)
     return false;
 }
 
-// 尝试将给定的翻译块(tb)中的指令与已有的翻译规则进行匹配
-/* Try to match instructions in this tb with existing rules */
+/**
+ * @brief 尝试将给定的翻译块(tb)中的指令与已有的翻译规则进行匹配
+ * 
+ * @param tb 指向翻译块的指针
+ * @return bool 是否成功匹配
+ */
 bool FEXCore::CPU::Arm64JITCore::MatchTranslationRule(const void *tb)
-{   // 输入合法性检查
+{   
+    // 输入合法性检查
     if (!tb) {
         LogMan::Msg::EFmt("Invalid input in MatchTranslationRule");
         return false;
@@ -722,16 +888,13 @@ bool FEXCore::CPU::Arm64JITCore::MatchTranslationRule(const void *tb)
     int i, j;
     bool ismatch = false;
 
-
     // 打印日志,表示开始匹配
     LogMan::Msg::IFmt("=====Guest Instr Match Rule Start, Guest PC: 0x{:x}=====\n", guest_instr->pc);
     // 重置各种缓冲区
     reset_buffer();
 
     // 从最长的规则开始尝试匹配
-    /* Try from the longest rule */
     while (cur_head) {
-
         bool opd_para = false;
         // 计算当前指令序列的长度
         if (guest_instr_num <= 0) {
@@ -745,7 +908,6 @@ bool FEXCore::CPU::Arm64JITCore::MatchTranslationRule(const void *tb)
         // 从最长的指令序列开始尝试匹配
         for (i = guest_instr_num; i > 0; i--) {
             // 计算哈希键
-            /* calculate hash key */
             int hindex = rule_hash_key(cur_head, i);
 
             if (hindex >= MAX_GUEST_LEN)
@@ -779,17 +941,15 @@ bool FEXCore::CPU::Arm64JITCore::MatchTranslationRule(const void *tb)
                 recover_map_buf_index();
             }
             // 如果找到匹配的规则
-            /* We find a matched rule, save it */
             if (cur_rule) {
                 X86Instruction *temp = cur_head;
                 uint64_t target_pc = 0;
 
                 match_insts += i;
                 // 计算目标PC
-                /* Check target_pc for this rule */
                 for (j = 1; j < i; j++)
                     temp = temp->next;
-                if (!temp->next) // last instr
+                if (!temp->next) // 最后一条指令
                     target_pc = temp->pc + temp->InstSize;
 
                 int pa_opc[MAX_PARA_OPC];
@@ -799,7 +959,6 @@ bool FEXCore::CPU::Arm64JITCore::MatchTranslationRule(const void *tb)
                         true, is_save_cc(cur_head, i), pa_opc);
                 }
                 // 更新匹配状态和指针
-                /* We get a matched rule, keep moving forward */
                 if (opd_para) {
                   for (j = 0; j < i; j++) {
                     add_matched_para_pc(cur_head->pc);
@@ -823,7 +982,6 @@ bool FEXCore::CPU::Arm64JITCore::MatchTranslationRule(const void *tb)
             if(1) goto final;
         }
         // 如果没有找到匹配的规则,继续下一条指令
-        /* No matched rule found, also keep moving forward */
         if (i == 0) {
             /* print unmatched instructions
                if not continuous, record as a new block */
@@ -835,6 +993,12 @@ bool FEXCore::CPU::Arm64JITCore::MatchTranslationRule(const void *tb)
     return ismatch;
 }
 
+/**
+ * @brief 从翻译块中移除客户端指令
+ * 
+ * @param tb 指向翻译块的指针
+ * @param pc 要移除的指令的程序计数器
+ */
 void remove_guest_instruction(FEXCore::Frontend::Decoder::DecodedBlocks *tb, uint64_t pc)
 {
     X86Instruction *head = tb->guest_instr;
@@ -859,9 +1023,16 @@ void remove_guest_instruction(FEXCore::Frontend::Decoder::DecodedBlocks *tb, uin
 }
 
 static ARMInstruction *arm_host;
-// 执行规则翻译
+
+/**
+ * @brief 执行规则翻译
+ * 
+ * @param rule_r 指向规则记录的指针
+ * @param reg_liveness 寄存器活跃度数组
+ */
 void FEXCore::CPU::Arm64JITCore::do_rule_translation(RuleRecord *rule_r, uint32_t *reg_liveness)
-{   // 输入合法性检查
+{   
+    // 输入合法性检查
     if (!rule_r) {
         LogMan::Msg::EFmt("Invalid rule record in do_rule_translation");
         return;
@@ -891,7 +1062,6 @@ void FEXCore::CPU::Arm64JITCore::do_rule_translation(RuleRecord *rule_r, uint32_
     ARMInstruction *arm_code = rule->arm_host;
     arm_host = arm_code;
 
-    /* Assemble host instructions in the rule */
     // 组装主机指令
     while(arm_code) {
         assemble_arm_instr(arm_code, rule_r);
@@ -932,7 +1102,13 @@ void FEXCore::CPU::Arm64JITCore::do_rule_translation(RuleRecord *rule_r, uint32_
     }
 }
 
-// 检查是否是最后的访问
+/**
+ * @brief 检查是否是最后的访问
+ * 
+ * @param insn 当前指令
+ * @param reg 要检查的寄存器
+ * @return bool 是否是最后的访问
+ */
 bool is_last_access(ARMInstruction *insn, ARMRegister reg)
 {
     ARMInstruction *head = arm_host;
