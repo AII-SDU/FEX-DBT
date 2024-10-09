@@ -18,6 +18,7 @@ $end_info$
 #include "Interface/Core/OpcodeDispatcher.h"
 #include "Interface/Core/JIT/JITCore.h"
 #include "Interface/Core/Dispatcher/Dispatcher.h"
+#include "Interface/Core/PatternDbt/RuleMatcher.h"
 #include "Interface/Core/X86Tables/X86Tables.h"
 #include "Interface/HLE/Thunks/Thunks.h"
 #include "Interface/IR/IR.h"
@@ -484,6 +485,8 @@ namespace FEXCore::Context {
       }
     }
 
+    FEXCore::Rule::RuleMatcher::Prepare();
+
     ExecutionThread(Thread);
     while(true) {
       this->WaitForIdle();
@@ -533,6 +536,7 @@ namespace FEXCore::Context {
     Thread->LookupCache = fextl::make_unique<FEXCore::LookupCache>(this);
     Thread->FrontendDecoder = fextl::make_unique<FEXCore::Frontend::Decoder>(this);
     Thread->PassManager = fextl::make_unique<FEXCore::IR::PassManager>();
+    Thread->RuleMatcher = fextl::make_unique<FEXCore::Rule::RuleMatcher>(this, Thread);
 
     Thread->CurrentFrame->Pointers.Common.L1Pointer = Thread->LookupCache->GetL1Pointer();
     Thread->CurrentFrame->Pointers.Common.L2Pointer = Thread->LookupCache->GetPagePointer();
@@ -787,10 +791,11 @@ namespace FEXCore::Context {
       auto BlockInfo = Thread->FrontendDecoder->GetDecodedBlockInfo();
       auto CodeBlocks = &BlockInfo->Blocks;
 
-      if (CodeBlocks->size() <= 1)
-        IsRuleTrans = Thread->CPUBackend->MatchTranslationRule(static_cast<const void*>(&CodeBlocks->at(0)));
-      else
+      if (CodeBlocks->size() <= 1) {
+        IsRuleTrans = Thread->RuleMatcher->MatchBlock(static_cast<const void*>(&CodeBlocks->at(0)));
+      } else {
         LogMan::Msg::EFmt("CodeBlocks Size > 1: {}", CodeBlocks->size());
+      }
 
       if (IsRuleTrans) {
         // LogMan::Msg::IFmt("Use Translation Block, Skip IR Block.");

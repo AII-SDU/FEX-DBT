@@ -31,6 +31,10 @@ namespace FEXCore::CPU {
   union Relocation;
 }
 
+namespace FEXCore::Rule {
+  class RuleMatcher;
+}
+
 namespace FEXCore::Frontend {
   class Decoder;
 }
@@ -118,6 +122,7 @@ namespace FEXCore::Core {
     fextl::robin_map<uint64_t, LocalIREntry> DebugStore;
 
     fextl::unique_ptr<FEXCore::Frontend::Decoder> FrontendDecoder;
+    fextl::unique_ptr<FEXCore::Rule::RuleMatcher> RuleMatcher;
     fextl::unique_ptr<FEXCore::IR::PassManager> PassManager;
     FEXCore::HLE::ThreadManagement ThreadManager;
     fextl::unique_ptr<JITSymbolBuffer> SymbolBuffer;

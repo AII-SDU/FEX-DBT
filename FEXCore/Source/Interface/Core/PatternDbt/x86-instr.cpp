@@ -6,7 +6,8 @@
 #include <cstdlib>
 
 #include "x86-instr.h"
-#include "rule-debug-log.h"
+#include "RuleDebug.h"
+#include "RuleMatcher.h"
 
 #define MAX_INSTR_NUM 1000000
 
@@ -206,18 +207,18 @@ void print_x86_instr(X86Instruction *instr)
         LogMan::Msg::IFmt("     reg: {}", x86_reg_str[opd->content.reg.num]);
       }
       else if (opd->type == X86_OPD_TYPE_MEM) {
-        fprintf(stderr,"[INFO]      mem: base(%s)", x86_reg_str[opd->content.mem.base]);
+        fprintf(stdout,"[INFO]      mem: base(%s)", x86_reg_str[opd->content.mem.base]);
         if (opd->content.mem.index != X86_REG_INVALID)
-          fprintf(stderr,", index(%s)", x86_reg_str[opd->content.mem.index]);
+          fprintf(stdout,", index(%s)", x86_reg_str[opd->content.mem.index]);
         if (opd->content.mem.scale.type == X86_IMM_TYPE_SYM)
-          fprintf(stderr,", scale(%s)", opd->content.mem.scale.content.sym);
+          fprintf(stdout,", scale(%s)", opd->content.mem.scale.content.sym);
         else if (opd->content.mem.scale.type == X86_IMM_TYPE_VAL)
-          fprintf(stderr,", scale(0x%lx)", opd->content.mem.scale.content.val);
+          fprintf(stdout,", scale(0x%lx)", opd->content.mem.scale.content.val);
         if (opd->content.mem.offset.type == X86_IMM_TYPE_SYM)
-          fprintf(stderr,", offset(%s)", opd->content.mem.offset.content.sym);
+          fprintf(stdout,", offset(%s)", opd->content.mem.offset.content.sym);
         else if (opd->content.mem.offset.type == X86_IMM_TYPE_VAL)
-          fprintf(stderr,", offset(0x%lx)", opd->content.mem.offset.content.val);
-        LogMan::Msg::EFmt("");
+          fprintf(stdout,", offset(0x%lx)", opd->content.mem.offset.content.val);
+        LogMan::Msg::IFmt("");
       }
     }
 }
@@ -572,7 +573,7 @@ void decide_reg_liveness(int succ_define_cc, X86Instruction *insn_seq)
     /* Decide if we need to save condition codes for instructions that define condtion codes */
 }
 
-void DecodeInstToX86Inst(FEXCore::X86Tables::DecodedInst *DecodeInst, X86Instruction *instr, uint64_t pid)
+void FEXCore::Rule::RuleMatcher::DecodeInstToX86Inst(FEXCore::X86Tables::DecodedInst *DecodeInst, X86Instruction *instr, uint64_t pid)
 {
     uint32_t SrcSize = FEXCore::X86Tables::DecodeFlags::GetSizeSrcFlags(DecodeInst->Flags);
     uint32_t DestSize = FEXCore::X86Tables::DecodeFlags::GetSizeDstFlags(DecodeInst->Flags);
@@ -600,7 +601,7 @@ void DecodeInstToX86Inst(FEXCore::X86Tables::DecodedInst *DecodeInst, X86Instruc
     // A normal instruction is the most likely.
     if (DecodeInst->TableInfo->Type == FEXCore::X86Tables::TYPE_INST) [[likely]] {
         if (!strcmp(DecodeInst->TableInfo->Name, "MOV")
-          && (((DecodeInst->OP >= 0x88 && DecodeInst->OP <= 0x8B) || DecodeInst->OP == 0x8E)
+          && (((DecodeInst->OP >= 0x88 && DecodeInst->OP <= 0x8B)) // 0x8E Move r/m16 to segment register.
           || (DecodeInst->OP >= 0xA0 && DecodeInst->OP <= 0xA3)
           || (DecodeInst->OP >= 0xB0 && DecodeInst->OP <= 0xBF))) {
             set_x86_instr_opc(instr, X86_OPC_MOV);
@@ -769,7 +770,7 @@ void DecodeInstToX86Inst(FEXCore::X86Tables::DecodedInst *DecodeInst, X86Instruc
             set_x86_instr_opc(instr, X86_OPC_CALL);
         }
         else if (!strcmp(DecodeInst->TableInfo->Name, "RET")
-          && (DecodeInst->OP == 0xC2 || DecodeInst->OP == 0xC3)) {
+          && (DecodeInst->OP == 0xC3)) { // C2 iw	RET imm16
             set_x86_instr_opc(instr, X86_OPC_RET);
         }
 

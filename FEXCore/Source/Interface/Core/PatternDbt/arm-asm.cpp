@@ -12,7 +12,7 @@
 #include "Interface/Core/Frontend.h"
 #include "Interface/Core/PatternDbt/arm-instr.h"
 #include "Interface/Core/PatternDbt/rule-translate.h"
-#include "Interface/Core/PatternDbt/rule-debug-log.h"
+#include "Interface/Core/PatternDbt/RuleDebug.h"
 
 using namespace FEXCore;
 
@@ -1564,7 +1564,7 @@ DEF_OPC(B) {
 
     // get new rip
     uint64_t target, fallthrough;
-    get_label_map(opd->content.imm.content.sym, &target, &fallthrough);
+    GetLabelMap(opd->content.imm.content.sym, &target, &fallthrough);
     this->TrueNewRip = fallthrough + target;
     this->FalseNewRip = fallthrough;
 
@@ -1605,7 +1605,7 @@ DEF_OPC(CBNZ) {
 
     // get new rip
     uint64_t target, fallthrough;
-    get_label_map(opd->content.imm.content.sym, &target, &fallthrough);
+    GetLabelMap(opd->content.imm.content.sym, &target, &fallthrough);
     this->TrueNewRip = fallthrough + target;
     this->FalseNewRip = fallthrough;
 
@@ -1633,7 +1633,7 @@ DEF_OPC(SET_JUMP) {
     }
 
     if (opd->type == ARM_OPD_TYPE_IMM) {
-        get_label_map(opd->content.imm.content.sym, &target, &fallthrough);
+        GetLabelMap(opd->content.imm.content.sym, &target, &fallthrough);
 
         LoadConstant(ARMEmitter::Size::i64Bit, ARMEmitter::Reg::r20, fallthrough & Mask);
         LoadConstant(ARMEmitter::Size::i64Bit, ARMEmitter::Reg::r21, target);
@@ -1663,7 +1663,7 @@ DEF_OPC(SET_CALL) {
     auto MemSrc = ARMEmitter::ExtendedMemOperand((ARMEmitter::Reg::r8).X(), ARMEmitter::IndexType::PRE, -0x8);
 
     if (instr->opd_num && opd->type == ARM_OPD_TYPE_IMM) {
-        get_label_map(opd->content.imm.content.sym, &target, &fallthrough);
+        GetLabelMap(opd->content.imm.content.sym, &target, &fallthrough);
         LoadConstant(ARMEmitter::Size::i64Bit, (ARMEmitter::Reg::r20).X(), fallthrough & Mask);
 
         int64_t s = static_cast<int64_t>(target);
@@ -1709,7 +1709,7 @@ DEF_OPC(PC_L) {
         ARMReg = GetGuestRegMap(opd1->content.reg.num, Reg1Size);
         auto RIPDst = GetRegMap(ARMReg);
 
-        get_label_map(opd2->content.imm.content.sym, &target, &fallthrough);
+        GetLabelMap(opd2->content.imm.content.sym, &target, &fallthrough);
         // 32bit this isn't RIP relative but instead absolute
         int64_t s = static_cast<int64_t>(static_cast<int32_t>(target));
         LoadConstant(ARMEmitter::Size::i64Bit, RIPDst.X(), (fallthrough + s) & Mask);
@@ -1725,7 +1725,7 @@ DEF_OPC(PC_L) {
           ldr(Dst.X(), MemSrc);
 
     } else if (opd1->type == ARM_OPD_TYPE_IMM) {
-        get_label_map(opd1->content.imm.content.sym, &target, &fallthrough);
+        GetLabelMap(opd1->content.imm.content.sym, &target, &fallthrough);
         // 32bit this isn't RIP relative but instead absolute
         int64_t s = static_cast<int64_t>(static_cast<int32_t>(target));
         LoadConstant(ARMEmitter::Size::i64Bit, Dst.X(), (fallthrough + s) & Mask);
@@ -1748,7 +1748,7 @@ DEF_OPC(PC_S) {
       ARMReg = GetGuestRegMap(opd1->content.reg.num, Reg1Size);
       auto RIPDst = GetRegMap(ARMReg);
 
-      get_label_map(opd2->content.imm.content.sym, &target, &fallthrough);
+      GetLabelMap(opd2->content.imm.content.sym, &target, &fallthrough);
       LoadConstant(ARMEmitter::Size::i64Bit, RIPDst.X(), (fallthrough + target) & Mask);
 
       auto MemSrc = ARMEmitter::ExtendedMemOperand(RIPDst.X(), ARMEmitter::IndexType::OFFSET, 0x0);

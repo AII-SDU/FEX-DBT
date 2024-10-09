@@ -248,7 +248,7 @@ static ARMInstruction *parse_rule_arm_instruction(char *line, uint64_t pc, int i
     return instr;
 }
 
-bool parse_rule_arm_code(FILE *fp, TranslationRule *rule)
+bool parse_rule_arm_code(int arch, FILE *fp, TranslationRule *rule)
 {
     uint64_t pc = 0;
     ARMInstruction *code_head = NULL;

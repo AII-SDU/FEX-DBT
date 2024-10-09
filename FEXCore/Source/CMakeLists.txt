@@ -121,6 +121,7 @@ set (SRCS
   Interface/Core/PatternDbt/arm-parse.cpp
   Interface/Core/PatternDbt/parse.cpp
   Interface/Core/PatternDbt/rule-translate.cpp
+  Interface/Core/PatternDbt/RuleMatcher.cpp
   Interface/Core/PatternDbt/arm-asm.cpp
   Interface/Core/PatternDbt/x86-instr.cpp
   Interface/Core/PatternDbt/x86-parse.cpp

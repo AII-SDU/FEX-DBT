@@ -244,7 +244,6 @@ void parse_rule_x86_code(FILE *fp, TranslationRule *rule)
     X86Instruction *code_head = NULL;
     X86Instruction *code_tail = NULL;
     char line[500];
-    bool ret = false;
 
     has_temp_register = false;
 
@@ -269,9 +268,6 @@ void parse_rule_x86_code(FILE *fp, TranslationRule *rule)
         pc += 4;    // fake value
         rule->guest_instr_num++;
     }
-
-    if (has_temp_register)
-        ret = false;
 
     // LogMan::Msg::IFmt( "**** Guest {} ****", rule->index);
     // print_x86_instr_seq(code_head);

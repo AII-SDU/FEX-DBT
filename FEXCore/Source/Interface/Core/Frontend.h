@@ -95,7 +95,6 @@ private:
   X86Instruction *x86_instr;
   int instr_buffer_index;
   int instr_block_start;
-  uint64_t pid;
 
   // This is for multiblock data tracking
   bool SymbolAvailable {false};
@@ -105,6 +104,8 @@ private:
   uint64_t SymbolMaxAddress {};
   uint64_t SymbolMinAddress {~0ULL};
   uint64_t SectionMaxAddress {~0ULL};
+
+  FEXCore::Core::InternalThreadState *Thread;
 
   DecodedBlockInformation BlockInfo;
   fextl::set<uint64_t> BlocksToDecode;

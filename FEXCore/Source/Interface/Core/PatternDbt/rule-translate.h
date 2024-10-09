@@ -1,12 +1,6 @@
 #ifndef RULE_TRANSLATE_H
 #define RULE_TRANSLATE_H
 
-#include "Interface/Core/Frontend.h"
-
-#include <FEXCore/IR/IR.h>
-#include <FEXCore/IR/IntrusiveIRList.h>
-#include <FEXCore/IR/RegisterAllocationData.h>
-
 #include "parse.h"
 
 typedef struct ImmMapping {

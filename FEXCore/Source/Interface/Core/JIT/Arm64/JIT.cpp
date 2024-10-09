@@ -17,7 +17,7 @@ $end_info$
 #include "Interface/Core/LookupCache.h"
 #include "Interface/Core/Frontend.h"
 #include "Interface/Core/PatternDbt/rule-translate.h"
-#include "Interface/Core/PatternDbt/rule-debug-log.h"
+#include "Interface/Core/PatternDbt/RuleDebug.h"
 
 #include "Interface/Core/Dispatcher/Dispatcher.h"
 #include "Interface/Core/JIT/Arm64/JITClass.h"
@@ -799,14 +799,13 @@ CPUBackend::CompiledCode Arm64JITCore::CompileCode(uint64_t Entry,
     Perform translation rule match
   */
   bool debug = true;
-  uint64_t cur_ins_pc = this->Entry;
-  uint32_t reg_liveness[100] = {0};
+  uint64_t CurInstPC = this->Entry;
 
   // See if we can use rules to do translation
-  if (cur_ins_pc && instr_is_match(cur_ins_pc)) {
+  if (CurInstPC && ThreadState->RuleMatcher->InstIsMatch(CurInstPC)) {
       debug = false;
       auto RTBStartHostCode = GetCursorAddress<uint8_t *>();
-      do_rule_translation(get_translation_rule(cur_ins_pc), reg_liveness);
+      ThreadState->RuleMatcher->GenHostCode(this, ThreadState->RuleMatcher->GetTranslationRule(CurInstPC));
       if (DebugData) {
         DebugData->Subblocks.push_back({
           static_cast<uint32_t>(RTBStartHostCode - CodeData.BlockEntry),

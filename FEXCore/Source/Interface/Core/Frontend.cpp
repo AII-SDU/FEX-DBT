@@ -9,7 +9,8 @@ $end_info$
 #include "Interface/Context/Context.h"
 #include "Interface/Core/Frontend.h"
 #include "Interface/Core/X86Tables/X86Tables.h"
-#include "Interface/Core/PatternDbt/rule-debug-log.h"
+#include "Interface/Core/PatternDbt/RuleDebug.h"
+#include "Interface/Core/PatternDbt/RuleMatcher.h"
 
 #include <cstring>
 #include <iostream>
@@ -589,7 +590,7 @@ bool Decoder::NormalOp(FEXCore::X86Tables::X86InstInfo const *Info, uint16_t Op,
 
   DecodeInst->InstSize = InstructionSize;
 
-  DecodeInstToX86Inst(DecodeInst, x86_instr, this->pid);
+  Thread->RuleMatcher->DecodeInstToX86Inst(DecodeInst, x86_instr, Thread->ThreadManager.PID);
 
   LOGMAN_THROW_AA_FMT(Bytes == 0, "Inst at 0x{:x}: 0x{:04x} '{}' Had an instruction of size {} with {} remaining",
                      DecodeInst->PC, DecodeInst->OP, DecodeInst->TableInfo->Name ?: "UND", InstructionSize, Bytes);
@@ -1207,7 +1208,7 @@ void Decoder::DecodeInstructionsAtEntry(FEXCore::Core::InternalThreadState *Thre
     // Do a bit of pointer math to figure out where we are in code
     InstStream = AdjustAddrForSpecialRegion(_InstStream, EntryPoint, RIPToDecode);
 
-    this->pid = Thread->ThreadManager.PID;
+    this->Thread = Thread;
     #ifdef DEBUG_RULE_LOG
       std::string logContent = "#### Current PC Block: " + intToHex(RIPToDecode) + "\n" + "1.Guest:";
       writeToLogFile(std::to_string(Thread->ThreadManager.PID) + "fex-asm.log", logContent);

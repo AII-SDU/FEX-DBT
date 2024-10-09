@@ -8,7 +8,8 @@
 #include <cstring>
 
 #include "rule-translate.h"
-#include "rule-debug-log.h"
+#include "RuleDebug.h"
+#include "RuleMatcher.h"
 
 #define MAX_RULE_RECORD_BUF_LEN 800
 #define MAX_GUEST_INSTR_LEN 800
@@ -21,7 +22,7 @@ static int debug = 0;
 static int match_insts = 0;
 static int match_counter = 10;
 
-inline void FEXCore::CPU::Arm64JITCore::reset_buffer(void)
+inline void FEXCore::Rule::RuleMatcher::reset_buffer(void)
 {
     imm_map_buf_index = 0;
     label_map_buf_index = 0;
@@ -33,21 +34,21 @@ inline void FEXCore::CPU::Arm64JITCore::reset_buffer(void)
     pc_para_matched_buf_index = 0;
 }
 
-inline void FEXCore::CPU::Arm64JITCore::save_map_buf_index(void)
+inline void FEXCore::Rule::RuleMatcher::save_map_buf_index(void)
 {
     imm_map_buf_index_pre = imm_map_buf_index;
     g_reg_map_buf_index_pre = g_reg_map_buf_index;
     label_map_buf_index_pre = label_map_buf_index;
 }
 
-inline void FEXCore::CPU::Arm64JITCore::recover_map_buf_index(void)
+inline void FEXCore::Rule::RuleMatcher::recover_map_buf_index(void)
 {
     imm_map_buf_index = imm_map_buf_index_pre;
     g_reg_map_buf_index = g_reg_map_buf_index_pre;
     label_map_buf_index = label_map_buf_index_pre;
 }
 
-inline void FEXCore::CPU::Arm64JITCore::init_map_ptr(void)
+inline void FEXCore::Rule::RuleMatcher::init_map_ptr(void)
 {
     imm_map = NULL;
     g_reg_map = NULL;
@@ -55,7 +56,7 @@ inline void FEXCore::CPU::Arm64JITCore::init_map_ptr(void)
     reg_map_num = 0;
 }
 
-inline void FEXCore::CPU::Arm64JITCore::add_rule_record(TranslationRule *rule, uint64_t pc, uint64_t t_pc,
+inline void FEXCore::Rule::RuleMatcher::add_rule_record(TranslationRule *rule, uint64_t pc, uint64_t t_pc,
                                    X86Instruction *last_guest, bool update_cc, bool save_cc, int pa_opc[20])
 {
     RuleRecord *p = &rule_record_buf[rule_record_buf_index++];
@@ -76,14 +77,14 @@ inline void FEXCore::CPU::Arm64JITCore::add_rule_record(TranslationRule *rule, u
 }
 
 
-inline void FEXCore::CPU::Arm64JITCore::add_matched_pc(uint64_t pc)
+inline void FEXCore::Rule::RuleMatcher::add_matched_pc(uint64_t pc)
 {
     pc_matched_buf[pc_matched_buf_index++] = pc;
 
     assert(pc_matched_buf_index < MAX_GUEST_INSTR_LEN);
 }
 
-inline void FEXCore::CPU::Arm64JITCore::add_matched_para_pc(uint64_t pc)
+inline void FEXCore::Rule::RuleMatcher::add_matched_para_pc(uint64_t pc)
 {
     pc_para_matched_buf[pc_para_matched_buf_index++] = pc;
 
@@ -91,7 +92,7 @@ inline void FEXCore::CPU::Arm64JITCore::add_matched_para_pc(uint64_t pc)
 }
 
 
-bool FEXCore::CPU::Arm64JITCore::match_label(char *lab_str, uint64_t t, uint64_t f)
+bool FEXCore::Rule::RuleMatcher::match_label(char *lab_str, uint64_t t, uint64_t f)
 {
     LabelMapping *lmap = l_map;
 
@@ -117,7 +118,7 @@ bool FEXCore::CPU::Arm64JITCore::match_label(char *lab_str, uint64_t t, uint64_t
     return true;
 }
 
-bool FEXCore::CPU::Arm64JITCore::match_register(X86Register greg, X86Register rreg, uint32_t regsize, bool HighBits)
+bool FEXCore::Rule::RuleMatcher::match_register(X86Register greg, X86Register rreg, uint32_t regsize, bool HighBits)
 {
     GuestRegisterMapping *gmap = g_reg_map;
 
@@ -174,7 +175,7 @@ bool FEXCore::CPU::Arm64JITCore::match_register(X86Register greg, X86Register rr
     return true;
 }
 
-bool FEXCore::CPU::Arm64JITCore::match_imm(uint64_t val, char *sym)
+bool FEXCore::Rule::RuleMatcher::match_imm(uint64_t val, char *sym)
 {
     ImmMapping *imap = imm_map;
 
@@ -200,7 +201,7 @@ bool FEXCore::CPU::Arm64JITCore::match_imm(uint64_t val, char *sym)
     return true;
 }
 
-bool FEXCore::CPU::Arm64JITCore::match_scale(X86Imm *gscale, X86Imm *rscale)
+bool FEXCore::Rule::RuleMatcher::match_scale(X86Imm *gscale, X86Imm *rscale)
 {
     if (gscale->type == X86_IMM_TYPE_NONE &&
         rscale->type == X86_IMM_TYPE_NONE)
@@ -217,7 +218,7 @@ bool FEXCore::CPU::Arm64JITCore::match_scale(X86Imm *gscale, X86Imm *rscale)
         return match_imm(gscale->content.val, rscale->content.sym);
 }
 
-bool FEXCore::CPU::Arm64JITCore::match_offset(X86Imm *goffset, X86Imm *roffset)
+bool FEXCore::Rule::RuleMatcher::match_offset(X86Imm *goffset, X86Imm *roffset)
 {
     char *sym;
     int32_t off_val;
@@ -248,7 +249,7 @@ bool FEXCore::CPU::Arm64JITCore::match_offset(X86Imm *goffset, X86Imm *roffset)
     return match_imm(off_val, sym);
 }
 
-bool FEXCore::CPU::Arm64JITCore::match_opd_imm(X86ImmOperand *gopd, X86ImmOperand *ropd)
+bool FEXCore::Rule::RuleMatcher::match_opd_imm(X86ImmOperand *gopd, X86ImmOperand *ropd)
 {
     if (gopd->type == X86_IMM_TYPE_NONE && ropd->type == X86_IMM_TYPE_NONE)
         return true;
@@ -264,7 +265,7 @@ bool FEXCore::CPU::Arm64JITCore::match_opd_imm(X86ImmOperand *gopd, X86ImmOperan
     }
 }
 
-bool FEXCore::CPU::Arm64JITCore::match_opd_reg(X86RegOperand *gopd, X86RegOperand *ropd, uint32_t regsize)
+bool FEXCore::Rule::RuleMatcher::match_opd_reg(X86RegOperand *gopd, X86RegOperand *ropd, uint32_t regsize)
 {
     /* physical reg, but high bit not match */
     if ((X86_REG_RAX <= ropd->num && ropd->num <= X86_REG_XMM15) && gopd->HighBits != ropd->HighBits) {
@@ -275,7 +276,7 @@ bool FEXCore::CPU::Arm64JITCore::match_opd_reg(X86RegOperand *gopd, X86RegOperan
     return match_register(gopd->num, ropd->num, regsize, gopd->HighBits);
 }
 
-bool FEXCore::CPU::Arm64JITCore::match_opd_mem(X86MemOperand *gopd, X86MemOperand *ropd)
+bool FEXCore::Rule::RuleMatcher::match_opd_mem(X86MemOperand *gopd, X86MemOperand *ropd)
 {
     return (match_register(gopd->base, ropd->base) &&
             match_register(gopd->index, ropd->index) &&
@@ -283,7 +284,7 @@ bool FEXCore::CPU::Arm64JITCore::match_opd_mem(X86MemOperand *gopd, X86MemOperan
             match_scale(&gopd->scale, &ropd->scale));
 }
 
-bool FEXCore::CPU::Arm64JITCore::check_opd_size(X86Operand *ropd, uint32_t gsize, uint32_t rsize)
+bool FEXCore::Rule::RuleMatcher::check_opd_size(X86Operand *ropd, uint32_t gsize, uint32_t rsize)
 {
     if ((ropd->type == X86_OPD_TYPE_REG && X86_REG_RAX <= ropd->content.reg.num && ropd->content.reg.num <= X86_REG_XMM15)
       || (ropd->type == X86_OPD_TYPE_IMM && ropd->content.imm.isRipLiteral) || ropd->type == X86_OPD_TYPE_MEM) {
@@ -293,18 +294,20 @@ bool FEXCore::CPU::Arm64JITCore::check_opd_size(X86Operand *ropd, uint32_t gsize
 }
 
 /* Try to match operand in guest instruction (gopd) and and the rule (ropd) */
-bool FEXCore::CPU::Arm64JITCore::match_operand(X86Instruction *ginstr, X86Instruction *rinstr, int opd_idx)
+bool FEXCore::Rule::RuleMatcher::match_operand(X86Instruction *ginstr, X86Instruction *rinstr, int opd_idx)
 {
     X86Operand *gopd = &ginstr->opd[opd_idx];
     X86Operand *ropd = &rinstr->opd[opd_idx];
     uint32_t regsize = opd_idx == 0 ? ginstr->DestSize : ginstr->SrcSize;
 
     if (gopd->type != ropd->type) {
+        if (debug) {
         #ifdef DEBUG_RULE_LOG
             writeToLogFile(std::to_string(ThreadState->ThreadManager.PID) + "fex-debug.log", "[INFO] Different operand type\n");
         #else
             LogMan::Msg::IFmt("Different operand {} type", opd_idx);
         #endif
+        }
         return false;
     }
 
@@ -353,8 +356,8 @@ static bool check_instr(X86Instruction *ginstr){
 // 0: not matched
 // 1: matched
 // 2: matched but condition is different
-bool FEXCore::CPU::Arm64JITCore::match_rule_internal(X86Instruction *instr, TranslationRule *rule,
-                    FEXCore::Frontend::Decoder::DecodedBlocks const *tb)
+bool FEXCore::Rule::RuleMatcher::match_rule_internal(X86Instruction *instr, TranslationRule *rule,
+                    const FEXCore::Frontend::Decoder::DecodedBlocks *tb)
 {
     X86Instruction *p_rule_instr = rule->x86_guest;
     X86Instruction *p_guest_instr = instr;
@@ -440,9 +443,9 @@ bool FEXCore::CPU::Arm64JITCore::match_rule_internal(X86Instruction *instr, Tran
     return true;
 }
 
-void FEXCore::CPU::Arm64JITCore::get_label_map(char *lab_str, uint64_t *t, uint64_t *f)
+void FEXCore::CPU::Arm64JITCore::GetLabelMap(char *lab_str, uint64_t *t, uint64_t *f)
 {
-    LabelMapping *lmap = l_map;
+    LabelMapping *lmap = LMap;
 
     while(lmap) {
         if (!strcmp(lmap->lab_str, lab_str)) {
@@ -457,9 +460,9 @@ void FEXCore::CPU::Arm64JITCore::get_label_map(char *lab_str, uint64_t *t, uint6
 }
 
 
-uint64_t FEXCore::CPU::Arm64JITCore::get_imm_map(char *sym)
+uint64_t FEXCore::CPU::Arm64JITCore::GetImmMap(char *sym)
 {
-    ImmMapping *im = imm_map;
+    ImmMapping *im = ImmMap;
     char t_str[50]; /* replaced string */
     char t_buf[50]; /* buffer string */
 
@@ -492,7 +495,7 @@ uint64_t FEXCore::CPU::Arm64JITCore::GetImmMapWrapper(ARMImm *imm)
     if (imm->type == ARM_IMM_TYPE_VAL)
         return imm->content.val;
 
-    return get_imm_map(imm->content.sym);
+    return GetImmMap(imm->content.sym);
 }
 
 static ARMRegister guest_host_reg_map(X86Register& reg)
@@ -552,7 +555,7 @@ ARMRegister FEXCore::CPU::Arm64JITCore::GetGuestRegMap(ARMRegister& reg, uint32_
         return reg;
     }
 
-    GuestRegisterMapping *gmap = g_reg_map;
+    GuestRegisterMapping *gmap = GRegMap;
 
     while (gmap) {
         if (!strcmp(get_arm_reg_str(reg), get_x86_reg_str(gmap->sym))) {
@@ -573,32 +576,30 @@ ARMRegister FEXCore::CPU::Arm64JITCore::GetGuestRegMap(ARMRegister& reg, uint32_
     return ARM_REG_INVALID;
 }
 
-bool FEXCore::CPU::Arm64JITCore::instr_is_match(uint64_t pc)
+bool FEXCore::Rule::RuleMatcher::InstIsMatch(uint64_t pc)
 {
-    int i;
-    for (i = 0; i < pc_matched_buf_index; i++) {
+    for(int i = 0; i < pc_matched_buf_index; i++) {
         if (pc_matched_buf[i] == pc)
             return true;
     }
     return false;
 }
 
-bool FEXCore::CPU::Arm64JITCore::instrs_is_match(uint64_t pc)
+bool FEXCore::Rule::RuleMatcher::instrs_is_match(uint64_t pc)
 {
-    int i;
-    for (i = 0; i < pc_para_matched_buf_index; i++) {
+    for(int i = 0; i < pc_para_matched_buf_index; i++) {
         if (pc_para_matched_buf[i] == pc)
             return true;
     }
-    return instr_is_match(pc);
+    return InstIsMatch(pc);
 }
 
-bool FEXCore::CPU::Arm64JITCore::tb_rule_matched(void)
+bool FEXCore::Rule::RuleMatcher::tb_rule_matched(void)
 {
     return (pc_matched_buf_index != 0);
 }
 
-bool FEXCore::CPU::Arm64JITCore::check_translation_rule(uint64_t pc)
+bool FEXCore::Rule::RuleMatcher::check_translation_rule(uint64_t pc)
 {
     int i;
     for (i = 0; i < rule_record_buf_index; i++) {
@@ -608,7 +609,7 @@ bool FEXCore::CPU::Arm64JITCore::check_translation_rule(uint64_t pc)
     return false;
 }
 
-RuleRecord* FEXCore::CPU::Arm64JITCore::get_translation_rule(uint64_t pc)
+RuleRecord* FEXCore::Rule::RuleMatcher::GetTranslationRule(uint64_t pc)
 {
     int i;
     for (i = 0; i < rule_record_buf_index; i++) {
@@ -643,7 +644,7 @@ static bool is_save_cc(X86Instruction *pins, int icount)
 
 
 /* Try to match instructions in this tb with existing rules */
-bool FEXCore::CPU::Arm64JITCore::MatchTranslationRule(const void *tb)
+bool FEXCore::Rule::RuleMatcher::MatchBlock(const void *tb)
 {
     auto transblock = static_cast<const FEXCore::Frontend::Decoder::DecodedBlocks*>(tb);
     if (match_counter <= 0)
@@ -788,7 +789,7 @@ void remove_guest_instruction(FEXCore::Frontend::Decoder::DecodedBlocks *tb, uin
 }
 
 static ARMInstruction *arm_host;
-void FEXCore::CPU::Arm64JITCore::do_rule_translation(RuleRecord *rule_r, uint32_t *reg_liveness)
+void FEXCore::Rule::RuleMatcher::GenHostCode(FEXCore::CPU::Arm64JITCore *JIT, RuleRecord *rule_r)
 {
     TranslationRule *rule;
 
@@ -799,6 +800,9 @@ void FEXCore::CPU::Arm64JITCore::do_rule_translation(RuleRecord *rule_r, uint32_
     l_map = rule_r->l_map;
     imm_map = rule_r->imm_map;
     g_reg_map = rule_r->g_reg_map;
+    JIT->LMap = rule_r->l_map;
+    JIT->ImmMap = rule_r->imm_map;
+    JIT->GRegMap = rule_r->g_reg_map;
 
     #ifdef PROFILE_RULE_TRANSLATION
         num_rules_replace++;
@@ -817,7 +821,7 @@ void FEXCore::CPU::Arm64JITCore::do_rule_translation(RuleRecord *rule_r, uint32_
 
     /* Assemble host instructions in the rule */
     while(arm_code) {
-        assemble_arm_instr(arm_code, rule_r);
+        JIT->assemble_arm_instr(arm_code, rule_r);
         arm_code = arm_code->next;
     }
 
@@ -829,27 +833,27 @@ void FEXCore::CPU::Arm64JITCore::do_rule_translation(RuleRecord *rule_r, uint32_
         X86Instruction* last_x86 = rule_r->last_guest;
 
         if (!x86_instr_test_branch(last_x86)) {
-            assemble_arm_exit(rule_r->target_pc);
+            JIT->assemble_arm_exit(rule_r->target_pc);
         } else if (last_x86->opc == X86_OPC_CALL) {
-            assemble_arm_exit(0);
+            JIT->assemble_arm_exit(0);
         } else if (last_x86->opc == X86_OPC_RET) {
-            this->RipReg = ARM_REG_R20;
-            assemble_arm_exit(0);
+            JIT->RipReg = ARM_REG_R20;
+            JIT->assemble_arm_exit(0);
         } else if (last_x86->opc == X86_OPC_JMP) {
             if (last_x86->opd_num && last_x86->opd[0].type == X86_OPD_TYPE_IMM
                     && last_x86->opd[0].content.imm.isRipLiteral) {
-                this->RipReg = ARM_REG_R20;
+                JIT->RipReg = ARM_REG_R20;
             }
-            assemble_arm_exit(0);
+            JIT->assemble_arm_exit(0);
         } else {
             // False Block
-            const auto IsTarget1 = JumpTargets2.try_emplace(this->FalseNewRip).first;
-            Bind(&IsTarget1->second);
-            assemble_arm_exit(this->FalseNewRip);
+            const auto IsTarget1 = JIT->JumpTargets2.try_emplace(JIT->FalseNewRip).first;
+            JIT->Bind(&IsTarget1->second);
+            JIT->assemble_arm_exit(JIT->FalseNewRip);
             // True Block
-            const auto IsTarget2 = JumpTargets2.try_emplace(this->TrueNewRip).first;
-            Bind(&IsTarget2->second);
-            assemble_arm_exit(this->TrueNewRip);
+            const auto IsTarget2 = JIT->JumpTargets2.try_emplace(JIT->TrueNewRip).first;
+            JIT->Bind(&IsTarget2->second);
+            JIT->assemble_arm_exit(JIT->TrueNewRip);
         }
     }
 }

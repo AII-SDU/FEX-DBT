@@ -9,7 +9,7 @@
 #include <fstream>
 #include <filesystem>
 
-#include "rule-debug-log.h"
+#include "RuleDebug.h"
 #include "arm-parse.h"
 #include "x86-parse.h"
 #include "parse.h"
@@ -242,7 +242,7 @@ static void flush_file(uint64_t pid)
     file2.close();
 }
 
-void ParseTranslationRules(uint64_t pid)
+void ParseTranslationRules(int arch, uint64_t pid)
 {
     std::filesystem::path homeDir = std::filesystem::path(getenv("HOME"));
     std::filesystem::path combinedPath = homeDir / "rules4all";
@@ -290,8 +290,8 @@ void ParseTranslationRules(uint64_t pid)
 
             parse_rule_x86_code(fp, rule);
 
-        } else if (strstr(line, ".Host:\n")) {
-            if (parse_rule_arm_code(fp, rule)) {
+        } else if (arch == 0 && strstr(line, ".Host:\n")) {
+            if (parse_rule_arm_code(arch, fp, rule)) {
 
                 /* install this rule to the hash table*/
                 install_rule(rule);
