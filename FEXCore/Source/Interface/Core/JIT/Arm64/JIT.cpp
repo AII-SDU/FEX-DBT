@@ -805,7 +805,7 @@ CPUBackend::CompiledCode Arm64JITCore::CompileCode(uint64_t Entry,
   if (CurInstPC && ThreadState->RuleMatcher->InstIsMatch(CurInstPC)) {
       debug = false;
       auto RTBStartHostCode = GetCursorAddress<uint8_t *>();
-      ThreadState->RuleMatcher->GenHostCode(this, ThreadState->RuleMatcher->GetTranslationRule(CurInstPC));
+      ThreadState->RuleMatcher->GenArm64Code(this, ThreadState->RuleMatcher->GetTranslationRule(CurInstPC));
       if (DebugData) {
         DebugData->Subblocks.push_back({
           static_cast<uint32_t>(RTBStartHostCode - CodeData.BlockEntry),

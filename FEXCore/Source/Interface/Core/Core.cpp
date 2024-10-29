@@ -485,7 +485,7 @@ namespace FEXCore::Context {
       }
     }
 
-    FEXCore::Rule::RuleMatcher::Prepare();
+    FEXCore::Rule::RuleMatcher::Prepare(FEXCore::Rule::ARM64);
 
     ExecutionThread(Thread);
     while(true) {
@@ -536,7 +536,10 @@ namespace FEXCore::Context {
     Thread->LookupCache = fextl::make_unique<FEXCore::LookupCache>(this);
     Thread->FrontendDecoder = fextl::make_unique<FEXCore::Frontend::Decoder>(this);
     Thread->PassManager = fextl::make_unique<FEXCore::IR::PassManager>();
-    Thread->RuleMatcher = fextl::make_unique<FEXCore::Rule::RuleMatcher>(this, Thread);
+
+    std::vector<int> GPRMappedIdx(16,0), GPRTempIdx(7,0), XMMMappedIdx(16,0), XMMTempIdx(7,0);
+    Thread->RuleMatcher = fextl::make_unique<FEXCore::Rule::RuleMatcher>(FEXCore::Rule::ARCH::ARM64, this, Thread,
+                                                    GPRMappedIdx, GPRTempIdx, XMMMappedIdx, XMMTempIdx);
 
     Thread->CurrentFrame->Pointers.Common.L1Pointer = Thread->LookupCache->GetL1Pointer();
     Thread->CurrentFrame->Pointers.Common.L2Pointer = Thread->LookupCache->GetPagePointer();

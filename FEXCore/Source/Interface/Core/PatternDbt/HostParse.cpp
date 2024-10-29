@@ -6,27 +6,53 @@
 #include <cstdlib>
 
 #include "arm-instr.h"
-#include "arm-parse.h"
+#include "RiscvInst.h"
+#include "HostParse.h"
 
 #define RULE_ARM_INSTR_BUF_LEN 1000000
+
+#define RULE_RISCV_INSTR_BUF_LEN 1000000
 
 static ARMInstruction *rule_arm_instr_buf;
 static int rule_arm_instr_buf_index;
 
-void rule_arm_instr_buf_init(void)
+static RISCVInstruction *rule_riscv_instr_buf;
+static int rule_riscv_instr_buf_index;
+
+void RuleArmInstrBufInit(void)
 {
     rule_arm_instr_buf = new ARMInstruction[RULE_ARM_INSTR_BUF_LEN];
     if (rule_arm_instr_buf == NULL)
-        LogMan::Msg::IFmt( "Cannot allocate memory for rule_arm_instr_buf!\n");
+        LogMan::Msg::IFmt("Cannot allocate memory for rule_arm_instr_buf!");
 
     rule_arm_instr_buf_index = 0;
+}
+
+void RuleRiscvInstrBufInit(void)
+{
+    rule_riscv_instr_buf = new RISCVInstruction[RULE_RISCV_INSTR_BUF_LEN];
+    if (rule_riscv_instr_buf == NULL)
+        LogMan::Msg::IFmt("Cannot allocate memory for rule_riscv_instr_buf!");
+
+    rule_riscv_instr_buf_index = 0;
 }
 
 static ARMInstruction *rule_arm_instr_alloc(uint64_t pc)
 {
     ARMInstruction *instr = &rule_arm_instr_buf[rule_arm_instr_buf_index++];
     if (rule_arm_instr_buf_index >= RULE_ARM_INSTR_BUF_LEN)
-        LogMan::Msg::IFmt( "Error: rule_arm_instr_buf is not enought!\n");
+        LogMan::Msg::IFmt("Error: rule_arm_instr_buf is not enought!");
+
+    instr->pc = pc;
+    instr->next = NULL;
+    return instr;
+}
+
+static RISCVInstruction *rule_riscv_instr_alloc(uint64_t pc)
+{
+    RISCVInstruction *instr = &rule_riscv_instr_buf[rule_riscv_instr_buf_index++];
+    if (rule_riscv_instr_buf_index >= RULE_RISCV_INSTR_BUF_LEN)
+        LogMan::Msg::IFmt("Error: rule_riscv_instr_buf is not enought!");
 
     instr->pc = pc;
     instr->next = NULL;
@@ -49,6 +75,25 @@ static int parse_rule_arm_opcode(char *line, ARMInstruction *instr)
     if (instr->opc == ARM_OPC_CSEL || instr->opc == ARM_OPC_CSET) {
         instr->cc = get_arm_cc(line);
     }
+
+    if (line[i] == ' ')
+        return i+1;
+    else
+        return i;
+}
+
+static int parse_rule_riscv_opcode(char *line, RISCVInstruction *instr)
+{
+    char opc_str[20] = "\0";
+    int i = 0;
+
+    while(line[i] == ' ' || line[i] == '\t') // skip the first spaces
+        i++;
+
+    while(line[i] != ' ' && line[i] != '\n')
+        strncat(opc_str, &line[i++], 1);
+
+    set_riscv_instr_opc_str(instr, opc_str);
 
     if (line[i] == ' ')
         return i+1;
@@ -182,12 +227,116 @@ static int parse_rule_arm_operand(char *line, int idx, ARMInstruction *instr, in
             set_arm_instr_opd_mem_index_type(instr, opd_idx, ARM_MEM_INDEX_TYPE_PRE);
             idx += 2;
         }
-    } else
-        LogMan::Msg::EFmt("Error in NO.{} parsing {} operand: unknown operand type: {}.", index, get_arm_instr_opc(instr->opc), line[idx]);
+    } else {
+        LogMan::Msg::EFmt("Error in NO.{} parsing {} operand: unknown operand type: {}.",
+                                                index, get_arm_instr_opc(instr->opc), line[idx]);
+        assert(0);
+    }
 
     if (line[idx] == ',')
         return idx+2;
     else if (line[idx] == ']')
+        return idx+1;
+    else
+        return idx;
+}
+
+static int parse_rule_riscv_operand(char *line, int idx, RISCVInstruction *instr, int opd_idx, int index)
+{
+    RISCVOperand *opd = &instr->opd[opd_idx];
+    char fc = line[idx];
+
+    if (fc == '#' || fc == '%') {
+        bool ispcrel_hi = false, ispcrel_lo = false;
+        if (fc == '%') {
+            idx++; // skip '%'
+            char pcrel_str[20] = "\0";
+            while (line[idx] != '(' && line[idx] != '\n')
+                strncat(pcrel_str, &line[idx++], 1);
+
+            if (!strcmp(pcrel_str, "pcrel_hi")) {
+                ispcrel_hi = true;
+            } else if (!strcmp(pcrel_str, "pcrel_lo")) {
+                ispcrel_lo = true;
+            }
+            idx++; // skip '('
+        }
+
+        idx++; // skip '#'
+        fc = line[idx];
+        char imm_str[20] = "\0";
+
+        while (line[idx] != '(' && line[idx] != ')' && line[idx] != ',' && line[idx] != '\n')
+            strncat(imm_str, &line[idx++], 1);
+
+        if (line[idx] == ',' || line[idx] == '\n'
+           || (line[idx] == ')' && (line[idx+1] == ',' || line[idx+1] == '\n'))) {
+            /* Immediate Operand
+              1. Read immediate value, #XXX
+              2. %pcrel_hi(#XXX) */
+            set_riscv_opd_type(opd, RISCV_OPD_TYPE_IMM);
+
+            if (fc == 'i' || fc == 'L')
+                set_riscv_opd_imm_sym_str(opd, imm_str);
+            else
+                set_riscv_opd_imm_val_str(opd, imm_str);
+
+            if (ispcrel_hi)
+                set_riscv_opd_imm_pcrel_hi(opd);
+            else if(ispcrel_lo)
+                set_riscv_opd_imm_pcrel_lo(opd);
+
+        } else if (line[idx] == '(' || (line[idx] == ')' && line[idx+1] == '(')) {
+            /* Memory Operand
+              1. Read base register string, e.g., "reg0", "reg1".
+              2. Read immediate value string.
+              3. %pcrel_hi(#XXX)(reg0). */
+            set_riscv_instr_opd_type(instr, opd_idx, RISCV_OPD_TYPE_MEM);
+
+            if (fc == 'i')
+                set_riscv_opd_mem_off_str(opd, imm_str);
+            else
+                set_riscv_opd_mem_off_val(opd, imm_str);
+
+            if (ispcrel_hi)
+                set_riscv_opd_imm_pcrel_hi(opd);
+            else if(ispcrel_lo)
+                set_riscv_opd_imm_pcrel_lo(opd);
+
+            if (ispcrel_hi || ispcrel_lo)
+                idx++; // skip ')'
+
+            char reg_str[20] = "\0";
+
+            idx++; // skip '('
+            while (line[idx] != ')' && line[idx] != '\n')
+                strncat(reg_str, &line[idx++], 1);
+
+            set_riscv_instr_opd_mem_base_str(instr, opd_idx, reg_str);
+        }
+    } else if (fc == 'r' || fc == 'x' || fc == 'f' || fc == 'v'
+        || fc == 't' || fc == 's' || fc == '{') {
+        /* Register Operand
+           1. Read register string, e.g., "reg0", "reg1".*/
+        char reg_str[20] = "\0";
+
+        if (fc == '{')
+          idx++;
+
+        while (line[idx] != ',' && line[idx] != '\n')
+            strncat(reg_str, &line[idx++], 1);
+
+        set_riscv_instr_opd_type(instr, opd_idx, RISCV_OPD_TYPE_REG);
+        set_riscv_instr_opd_reg_str(instr, opd_idx, reg_str);
+    } else {
+        LogMan::Msg::EFmt("Error in NO.{} parsing {} operand: unknown operand type: {}.",
+                        index, get_riscv_instr_opc(instr->opc), line[idx]);
+        exit(0);
+    }
+
+    if (line[idx] == ',')
+        return idx+2;
+    else if (line[idx] == ')')
         return idx+1;
     else
         return idx;
@@ -248,11 +397,33 @@ static ARMInstruction *parse_rule_arm_instruction(char *line, uint64_t pc, int i
     return instr;
 }
 
-bool parse_rule_arm_code(int arch, FILE *fp, TranslationRule *rule)
+static RISCVInstruction *parse_rule_riscv_instruction(char *line, uint64_t pc, int index)
+{
+    RISCVInstruction *instr = rule_riscv_instr_alloc(pc);
+    int opd_idx;
+    int i;
+
+    i = parse_rule_riscv_opcode(line, instr);
+
+    size_t len = strlen(line);
+
+    opd_idx = 0;
+    while (i < len && line[i] != '\n')
+        i = parse_rule_riscv_operand(line, i, instr, opd_idx++, index);
+
+    set_riscv_instr_opd_size(instr);
+    set_riscv_instr_opd_num(instr, opd_idx);
+
+    return instr;
+}
+
+bool ParseRuleHostCode(int arch, FILE *fp, TranslationRule *rule)
 {
     uint64_t pc = 0;
-    ARMInstruction *code_head = NULL;
-    ARMInstruction *code_tail = NULL;
+    ARMInstruction *arm_code_head = NULL;
+    ARMInstruction *arm_code_tail = NULL;
+    RISCVInstruction *riscv_code_head = NULL;
+    RISCVInstruction *riscv_code_tail = NULL;
     char line[500];
     bool ret = true;
 
@@ -267,20 +438,31 @@ bool parse_rule_arm_code(int arch, FILE *fp, TranslationRule *rule)
         char fs = line[0];
         if (fs == '#')
             continue;
-        ARMInstruction *cur = parse_rule_arm_instruction(line, pc, rule->index);
-        if (!code_head) {
-            code_head = code_tail = cur;
-        } else {
-            code_tail->next = cur;
-            code_tail = cur;
+        if (arch == 0) {
+            ARMInstruction *cur = parse_rule_arm_instruction(line, pc, rule->index);
+            if (!arm_code_head) {
+                arm_code_head = arm_code_tail = cur;
+            } else {
+                arm_code_tail->next = cur;
+                arm_code_tail = cur;
+            }
+        } else if (arch == 1) {
+            RISCVInstruction *cur = parse_rule_riscv_instruction(line, pc, rule->index);
+            if (!riscv_code_head) {
+                riscv_code_head = riscv_code_tail = cur;
+            } else {
+                riscv_code_tail->next = cur;
+                riscv_code_tail = cur;
+            }
         }
         pc += 4; // fake value
     }
 
-    // LogMan::Msg::IFmt( "**** Host {} ****", rule->index);
-    // print_arm_instr_seq(code_head);
-
-    rule->arm_host = code_head;
+    if (arch == 0) {
+        rule->arm_host = arm_code_head;
+    } else if (arch == 1) {
+        rule->riscv_host = riscv_code_head;
+    }
 
     return ret;
 }

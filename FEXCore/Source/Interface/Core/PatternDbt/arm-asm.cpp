@@ -1,5 +1,4 @@
 #include "Interface/Context/Context.h"
-#include "FEXCore/IR/IR.h"
 #include "Interface/Core/ArchHelpers/CodeEmitter/Emitter.h"
 #include "Interface/Core/ArchHelpers/CodeEmitter/Registers.h"
 #include "Interface/Core/LookupCache.h"
@@ -2508,7 +2507,7 @@ void FEXCore::CPU::Arm64JITCore::assemble_arm_instr(ARMInstruction *instr, RuleR
 
 void FEXCore::CPU::Arm64JITCore::assemble_arm_exit(uint64_t target_pc)
 {
-    ResetStack();
+    // ResetStack();
 
     if (target_pc != 0) {
       ARMEmitter::SingleUseForwardLabel l_BranchHost;

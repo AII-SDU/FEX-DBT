@@ -2,7 +2,7 @@
 #define RULE_DEBUG_LOG_H
 
 #include <string.h>
-#include "parse.h"
+#include "rule-translate.h"
 
 // #define DEBUG_RULE_LOG
 

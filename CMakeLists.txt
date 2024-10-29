@@ -224,6 +224,9 @@ endif()
 add_subdirectory(External/vixl/)
 include_directories(SYSTEM External/vixl/src/)
 
+add_subdirectory(External/biscuit/)
+include_directories(SYSTEM External/biscuit/include/)
+
 if (CMAKE_CXX_COMPILER_ID STREQUAL "GNU")
   # This means we were attempted to get compiled with GCC
   message(FATAL_ERROR "FEX doesn't support getting compiled with GCC!")

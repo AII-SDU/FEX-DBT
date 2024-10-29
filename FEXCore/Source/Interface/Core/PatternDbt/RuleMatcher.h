@@ -8,11 +8,13 @@
 
 #include <FEXCore/Core/Context.h>
 #include <FEXCore/Core/X86Enums.h>
+#include <biscuit/assembler.hpp>
 
 #include <vector>
 
 #include "x86-instr.h"
 #include "arm-instr.h"
+#include "RiscvInst.h"
 #include "rule-translate.h"
 
 namespace FEXCore::CPU {
@@ -20,6 +22,8 @@ class Arm64JITCore;
 }
 
 namespace FEXCore::Rule {
+
+#define DEF_RV_OPC(x) void Opc_##x(RISCVInstruction *instr, RuleRecord *rrule)
 
 enum ARCH {
     ARM64 = 0,
@@ -34,11 +38,13 @@ public:
     // GPRTempIdx: 指定生成Host指令时可以使用的临时通用寄存器
     // XMMMappedIdx: 指定XMM0～XMM15 映射到Host的向量寄存器
     // XMMTempIdx: 指定生成Host指令时可以使用的临时向量寄存器
-	RuleMatcher(FEXCore::Context::ContextImpl *Ctx,
-				FEXCore::Core::InternalThreadState *Thread);
+	RuleMatcher(ARCH Arch, FEXCore::Context::ContextImpl *Ctx,
+							FEXCore::Core::InternalThreadState *Thread,
+							std::vector<int> GPRMappedIdx, std::vector<int> GPRTempIdx,
+							std::vector<int> XMMMappedIdx, std::vector<int> XMMTempIdx);
 
 	// 准备工作，用作进程初始化时进行规则的解析
-	static void Prepare();
+	static void Prepare(ARCH arch);
 
 	// 基本块匹配函数，Block为传入的待匹配的X86指令基本块
 	// 返回匹配成功与否
@@ -67,7 +73,7 @@ public:
 	// 另外：每个块结束时，将Guest对应的目标地址（跳转或者函数调用）写入RIP对应的Host的寄存器，
 	// 不尝试链接其他块，因为外部不会传入其他翻译的块
 	// 并以ret指令返回到Dispatcher，作为结束指令
-	std::pair<uint8_t*, size_t> EmitCode();
+	std::pair<uint8_t*, size_t> EmitCode(RuleRecord *rule_r);
 
 	// 查询基本块匹配时的规则index
 	int GetRuleIndex(uint64_t pc);
@@ -76,12 +82,11 @@ public:
     void DecodeInstToX86Inst(FEXCore::X86Tables::DecodedInst *DecodeInst, X86Instruction *instr, uint64_t pid);
 
     friend class FEXCore::CPU::Arm64JITCore;
+    friend class biscuit::Assembler;
 
-    static ARCH Arch;
-    static std::vector<int> GPRMappedIdx;
-    static std::vector<int> GPRTempIdx;
-    static std::vector<int> XMMMappedIdx;
-    static std::vector<int> XMMTempIdx;
+#include "Interface/Core/PatternDbt/CodeEmitter/BaseIntegerOps.inl"
+#include "Interface/Core/PatternDbt/CodeEmitter/FPOps.inl"
+#include "Interface/Core/PatternDbt/CodeEmitter/VectorOps.inl"
 
 private:
     /* Try to match instructions in this tb to existing rules */
@@ -135,20 +140,33 @@ private:
                             const FEXCore::Frontend::Decoder::DecodedBlocks *tb);
 
     bool InstIsMatch(uint64_t pc);
-    bool instrs_is_match(uint64_t pc);
-    bool tb_rule_matched(void);
-    bool check_translation_rule(uint64_t pc);
+    bool InstParaIsMatch(uint64_t pc);
+    bool TBRuleMatched(void);
+    bool CheckTranslationRule(uint64_t pc);
     RuleRecord* GetTranslationRule(uint64_t pc);
-    void GenHostCode(FEXCore::CPU::Arm64JITCore *JIT, RuleRecord *rule_r);
+    void GenArm64Code(FEXCore::CPU::Arm64JITCore *JIT, RuleRecord *rule_r);
 
+    RISCVRegister GuestMapRiscvReg(X86Register& reg);
+    RISCVRegister GetRiscvTmpReg(RISCVRegister& reg);
+    RISCVRegister GetRiscvReg(RISCVRegister& reg);
+    biscuit::GPR GetRiscvGPR(RISCVRegister& reg);
+    biscuit::FPR GetRiscvFPR(RISCVRegister& reg);
+    biscuit::Vec GetRiscvVec(RISCVRegister& reg);
+
+    uint64_t GetImmMap(char *sym);
+    uint64_t GetImmMapWrapper(RISCVImm *imm);
+
+    void GetLabelMap(char *lab_str, int32_t *t, int32_t *f);
+
+    ARCH Arch;
     FEXCore::Context::Context *Ctx;
     FEXCore::Core::InternalThreadState *Thread;
-    uint8_t* CodeBuffer;
-    size_t   CodeBufferSize;
-    uint8_t* PrologueCode;
-    size_t   PrologueSize;
-    uint8_t* EpilogueCode;
-    size_t   EpilogueSize;
+    std::vector<int> GPRMappedIdx;
+    std::vector<int> GPRTempIdx;
+    std::vector<int> XMMMappedIdx;
+    std::vector<int> XMMTempIdx;
+
+    fextl::unique_ptr<biscuit::Assembler> as;
 };
 }
 #endif

@@ -585,7 +585,7 @@ bool FEXCore::Rule::RuleMatcher::InstIsMatch(uint64_t pc)
     return false;
 }
 
-bool FEXCore::Rule::RuleMatcher::instrs_is_match(uint64_t pc)
+bool FEXCore::Rule::RuleMatcher::InstParaIsMatch(uint64_t pc)
 {
     for(int i = 0; i < pc_para_matched_buf_index; i++) {
         if (pc_para_matched_buf[i] == pc)
@@ -594,12 +594,12 @@ bool FEXCore::Rule::RuleMatcher::instrs_is_match(uint64_t pc)
     return InstIsMatch(pc);
 }
 
-bool FEXCore::Rule::RuleMatcher::tb_rule_matched(void)
+bool FEXCore::Rule::RuleMatcher::TBRuleMatched(void)
 {
     return (pc_matched_buf_index != 0);
 }
 
-bool FEXCore::Rule::RuleMatcher::check_translation_rule(uint64_t pc)
+bool FEXCore::Rule::RuleMatcher::CheckTranslationRule(uint64_t pc)
 {
     int i;
     for (i = 0; i < rule_record_buf_index; i++) {
@@ -789,7 +789,7 @@ void remove_guest_instruction(FEXCore::Frontend::Decoder::DecodedBlocks *tb, uin
 }
 
 static ARMInstruction *arm_host;
-void FEXCore::Rule::RuleMatcher::GenHostCode(FEXCore::CPU::Arm64JITCore *JIT, RuleRecord *rule_r)
+void FEXCore::Rule::RuleMatcher::GenArm64Code(FEXCore::CPU::Arm64JITCore *JIT, RuleRecord *rule_r)
 {
     TranslationRule *rule;
 

@@ -10,9 +10,9 @@
 #include <filesystem>
 
 #include "RuleDebug.h"
-#include "arm-parse.h"
+#include "HostParse.h"
 #include "x86-parse.h"
-#include "parse.h"
+#include "rule-translate.h"
 
 #define RULE_BUF_LEN 10000
 
@@ -137,6 +137,7 @@ static TranslationRule *rule_alloc(void)
 
     rule->index = 0;
     rule->arm_host = NULL;
+    rule->riscv_host = NULL;
     rule->x86_guest = NULL;
     rule->guest_instr_num = 0;
     rule->next = NULL;
@@ -156,7 +157,8 @@ static TranslationRule *rule_alloc(void)
 
 static void init_buf(void)
 {
-    rule_arm_instr_buf_init();
+    RuleArmInstrBufInit();
+    RuleRiscvInstrBufInit();
     rule_x86_instr_buf_init();
 
     rule_buf_init();
@@ -290,19 +292,23 @@ void ParseTranslationRules(int arch, uint64_t pid)
 
             parse_rule_x86_code(fp, rule);
 
-        } else if (arch == 0 && strstr(line, ".Host:\n")) {
-            if (parse_rule_arm_code(arch, fp, rule)) {
+        } else if ((substr = strstr(line, ".Host:\n")) != NULL) {
+            if (ParseRuleHostCode(arch, fp, rule)) {
 
                 /* install this rule to the hash table*/
                 install_rule(rule);
 
                 install_counter++;
             }
-        } else
-            LogMan::Msg::IFmt("Error in parsing rule file: {}.\n", line);
+        } else {
+            LogMan::Msg::EFmt("Error in parsing rule file: {}.\n", line);
+            assert(0);
+            break;
+        }
     }
 
-    LogMan::Msg::IFmt("== Ready: {} translation rules loaded, {} installed, {} cached.\n\n", counter, install_counter, cache_counter);
+    LogMan::Msg::IFmt("== Ready: {} translation rules loaded, {} installed, {} cached.\n\n",
+                                                            counter, install_counter, cache_counter);
     for (i = 0; i < MAX_GUEST_LEN;i++){
         if (cache_rule_table[i]){
             TranslationRule *temp = cache_rule_table[i];
